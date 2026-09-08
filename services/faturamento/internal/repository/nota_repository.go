@@ -13,8 +13,14 @@ import (
 	"github.com/gustavopinto244/korp-teste-gustavopinto/services/faturamento/internal/domain"
 )
 
-// NotaRepository encapsula todo o acesso a faturamento.nota_fiscal e
-// faturamento.nota_fiscal_item.
+// NotaRepository encapsula todo o acesso às tabelas nota_fiscal e
+// nota_fiscal_item.
+//
+// As consultas não qualificam o schema: quem resolve os nomes é o
+// search_path do DSN (ex. "...?search_path=faturamento"), o mesmo que o
+// runner de migrations usa para decidir onde criar as tabelas. Fixar
+// "faturamento." aqui faria a suíte de testes ler e escrever no schema de
+// produção mesmo apontando para um schema descartável.
 type NotaRepository struct {
 	pool *pgxpool.Pool
 }
@@ -36,7 +42,7 @@ func (r *NotaRepository) Criar(ctx context.Context, itens []domain.ItemNota) (do
 
 	var nota domain.NotaFiscal
 	err = tx.QueryRow(ctx, `
-		INSERT INTO faturamento.nota_fiscal DEFAULT VALUES
+		INSERT INTO nota_fiscal DEFAULT VALUES
 		RETURNING id, numero, status, criado_em, fechado_em
 	`).Scan(&nota.ID, &nota.Numero, &nota.Status, &nota.CriadoEm, &nota.FechadoEm)
 	if err != nil {
@@ -46,7 +52,7 @@ func (r *NotaRepository) Criar(ctx context.Context, itens []domain.ItemNota) (do
 	for i := range itens {
 		itens[i].NotaID = nota.ID
 		err := tx.QueryRow(ctx, `
-			INSERT INTO faturamento.nota_fiscal_item (nota_id, produto_codigo, produto_descricao, quantidade)
+			INSERT INTO nota_fiscal_item (nota_id, produto_codigo, produto_descricao, quantidade)
 			VALUES ($1, $2, $3, $4)
 			RETURNING id
 		`, nota.ID, itens[i].ProdutoCodigo, itens[i].ProdutoDescricao, itens[i].Quantidade).Scan(&itens[i].ID)
@@ -68,7 +74,7 @@ func (r *NotaRepository) Criar(ctx context.Context, itens []domain.ItemNota) (do
 func (r *NotaRepository) Listar(ctx context.Context) ([]domain.NotaFiscal, error) {
 	rows, err := r.pool.Query(ctx, `
 		SELECT id, numero, status, criado_em, fechado_em
-		FROM faturamento.nota_fiscal
+		FROM nota_fiscal
 		ORDER BY id DESC
 	`)
 	if err != nil {
@@ -96,7 +102,7 @@ func (r *NotaRepository) BuscarPorID(ctx context.Context, id int64) (domain.Nota
 	var n domain.NotaFiscal
 	err := r.pool.QueryRow(ctx, `
 		SELECT id, numero, status, criado_em, fechado_em
-		FROM faturamento.nota_fiscal
+		FROM nota_fiscal
 		WHERE id = $1
 	`, id).Scan(&n.ID, &n.Numero, &n.Status, &n.CriadoEm, &n.FechadoEm)
 	if err != nil {
@@ -118,7 +124,7 @@ func (r *NotaRepository) BuscarPorID(ctx context.Context, id int64) (domain.Nota
 func (r *NotaRepository) buscarItens(ctx context.Context, notaID int64) ([]domain.ItemNota, error) {
 	rows, err := r.pool.Query(ctx, `
 		SELECT id, nota_id, produto_codigo, produto_descricao, quantidade
-		FROM faturamento.nota_fiscal_item
+		FROM nota_fiscal_item
 		WHERE nota_id = $1
 		ORDER BY id ASC
 	`, notaID)
@@ -148,7 +154,7 @@ func (r *NotaRepository) buscarItens(ctx context.Context, notaID int64) ([]domai
 // Aberta), devolve domain.ErrNotaNaoAberta.
 func (r *NotaRepository) MarcarFechada(ctx context.Context, id int64) (domain.NotaFiscal, error) {
 	ct, err := r.pool.Exec(ctx, `
-		UPDATE faturamento.nota_fiscal
+		UPDATE nota_fiscal
 		SET status = 'Fechada', fechado_em = now()
 		WHERE id = $1 AND status = 'Aberta'
 	`, id)

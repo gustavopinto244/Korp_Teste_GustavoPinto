@@ -1,8 +1,13 @@
 package apierror_test
 
 import (
+	"bytes"
 	"encoding/json"
+	"errors"
+	"log"
 	"net/http/httptest"
+	"os"
+	"strings"
 	"testing"
 
 	"github.com/gustavopinto244/korp-teste-gustavopinto/services/faturamento/internal/apierror"
@@ -16,6 +21,71 @@ func decodificar(t *testing.T, rr *httptest.ResponseRecorder) apierror.Envelope 
 		t.Fatalf("decodificar corpo de erro: %v", err)
 	}
 	return env
+}
+
+// TestEscreverErro_ErroInternoSegueFormatoCanonico trava o formato de
+// ERRO_INTERNO no mesmo contrato usado pelo serviço de estoque: o frontend
+// consome um formato só e o mesmo `codigo` não pode chegar com `repetivel`
+// invertido conforme o serviço de origem.
+func TestEscreverErro_ErroInternoSegueFormatoCanonico(t *testing.T) {
+	rr := httptest.NewRecorder()
+	apierror.EscreverErro(rr, errors.New("falha inesperada de infraestrutura"))
+
+	if rr.Code != 500 {
+		t.Fatalf("esperava status 500, obteve %d", rr.Code)
+	}
+	env := decodificar(t, rr)
+	if env.Erro.Codigo != "ERRO_INTERNO" {
+		t.Fatalf("código inesperado: %s", env.Erro.Codigo)
+	}
+	if env.Erro.Tipo != apierror.TipoSistema {
+		t.Fatalf("tipo inesperado: %s", env.Erro.Tipo)
+	}
+	if !env.Erro.Repetivel {
+		t.Fatal("ERRO_INTERNO deve ser repetível, como no serviço de estoque")
+	}
+	if env.Erro.Mensagem != "Ocorreu um erro inesperado. Tente novamente em instantes." {
+		t.Fatalf("mensagem divergente do formato canônico: %q", env.Erro.Mensagem)
+	}
+}
+
+// TestEscreverErro_ErroInternoRegistraErroOriginal garante que o erro
+// original não é descartado silenciosamente — sem log, um 500 é indebugável,
+// já que o corpo da resposta nunca carrega o erro real.
+func TestEscreverErro_ErroInternoRegistraErroOriginal(t *testing.T) {
+	var saida bytes.Buffer
+	flagsOriginais := log.Flags()
+	log.SetOutput(&saida)
+	log.SetFlags(0)
+	t.Cleanup(func() {
+		log.SetOutput(os.Stderr)
+		log.SetFlags(flagsOriginais)
+	})
+
+	apierror.EscreverErro(httptest.NewRecorder(), errors.New("conexão com o banco recusada"))
+
+	if !strings.Contains(saida.String(), "conexão com o banco recusada") {
+		t.Fatalf("esperava o erro original no log, obtive: %q", saida.String())
+	}
+}
+
+// TestEscreverErro_ErroConhecidoNaoPoluiLog confirma que só o 500 vai para o
+// log: erros de negócio esperados não são ruído operacional.
+func TestEscreverErro_ErroConhecidoNaoPoluiLog(t *testing.T) {
+	var saida bytes.Buffer
+	flagsOriginais := log.Flags()
+	log.SetOutput(&saida)
+	log.SetFlags(0)
+	t.Cleanup(func() {
+		log.SetOutput(os.Stderr)
+		log.SetFlags(flagsOriginais)
+	})
+
+	apierror.EscreverErro(httptest.NewRecorder(), domain.ErrNotaNaoAberta)
+
+	if saida.Len() != 0 {
+		t.Fatalf("erro de negócio não deveria ser logado, obtive: %q", saida.String())
+	}
 }
 
 func TestEscreverErro_NotaNaoAberta(t *testing.T) {

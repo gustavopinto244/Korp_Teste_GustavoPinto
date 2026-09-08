@@ -7,6 +7,7 @@ package apierror
 import (
 	"encoding/json"
 	"errors"
+	"log"
 	"net/http"
 
 	"github.com/gustavopinto244/korp-teste-gustavopinto/services/faturamento/internal/domain"
@@ -41,7 +42,9 @@ func Novo(codigo, mensagem, tipo string, repetivel bool) Envelope {
 func Escrever(w http.ResponseWriter, status int, env Envelope) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(env)
+	if err := json.NewEncoder(w).Encode(env); err != nil {
+		log.Printf("falha ao codificar envelope de erro: %v", err)
+	}
 }
 
 // statusPara mapeia um erro de domínio conhecido para o par (status HTTP,
@@ -81,7 +84,13 @@ func statusPara(err error) (int, Envelope) {
 		return http.StatusServiceUnavailable, Novo("IA_INDISPONIVEL", "Não foi possível interpretar o texto agora. Preencha os itens manualmente.", TipoSistema, true)
 
 	default:
-		return http.StatusInternalServerError, Novo("ERRO_INTERNO", "Erro interno inesperado.", TipoSistema, false)
+		// Erro inesperado: o texto e o `repetivel` são os mesmos usados pelo
+		// serviço de estoque, para que o mesmo `codigo` chegue ao frontend
+		// com exatamente o mesmo significado, venha de qual serviço vier.
+		// `repetivel: true` porque um 500 costuma ser transitório
+		// (indisponibilidade momentânea de banco, por exemplo) e repetir é
+		// a orientação certa ao usuário.
+		return http.StatusInternalServerError, Novo("ERRO_INTERNO", "Ocorreu um erro inesperado. Tente novamente em instantes.", TipoSistema, true)
 	}
 }
 
@@ -89,6 +98,14 @@ func statusPara(err error) (int, Envelope) {
 // formato único de erro HTTP e escreve na resposta.
 func EscreverErro(w http.ResponseWriter, err error) {
 	status, env := statusPara(err)
+
+	// O erro original nunca aparece no corpo da resposta (o contrato manda
+	// mensagem pronta para o usuário, nunca stack trace), então sem este log
+	// um 500 seria indebugável: o erro seria descartado silenciosamente.
+	if status == http.StatusInternalServerError {
+		log.Printf("erro interno: %v", err)
+	}
+
 	Escrever(w, status, env)
 }
 
