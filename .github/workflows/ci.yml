@@ -1,0 +1,86 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  estoque:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: korp
+          POSTGRES_PASSWORD: korp
+          POSTGRES_DB: korp
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U korp"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+    defaults:
+      run:
+        working-directory: services/estoque
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.27"
+      - run: go build ./...
+      - run: go vet ./...
+      - name: Testes (domínio + integração)
+        # -p 1: os testes de integração compartilham um único Postgres e
+        # fazem DROP/CREATE SCHEMA — rodar pacotes em paralelo corrompe o
+        # catálogo do banco.
+        run: go test ./... -p 1
+        env:
+          TEST_DATABASE_URL_ESTOQUE: postgres://korp:korp@localhost:5432/korp?sslmode=disable&search_path=estoque_test
+
+  faturamento:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: korp
+          POSTGRES_PASSWORD: korp
+          POSTGRES_DB: korp
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U korp"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+    defaults:
+      run:
+        working-directory: services/faturamento
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.27"
+      - run: go build ./...
+      - run: go vet ./...
+      - name: Testes (domínio + integração)
+        run: go test ./... -p 1
+        env:
+          TEST_DATABASE_URL_FATURAMENTO: postgres://korp:korp@localhost:5432/korp?sslmode=disable&search_path=faturamento_test
+
+  frontend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: "npm"
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci
+      - run: npx ng lint
+      - run: npx ng build --configuration development
+      - run: npx ng test --watch=false
