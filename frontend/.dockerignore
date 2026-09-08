@@ -1,0 +1,10 @@
+# Sem isto, o `COPY . .` do Dockerfile sobrescreve o resultado do `npm ci`
+# com o node_modules da máquina do desenvolvedor (binários da plataforma
+# errada) e ainda joga dist/ e caches para dentro do contexto de build.
+node_modules
+dist
+.angular
+.git
+.vscode
+coverage
+*.log

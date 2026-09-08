@@ -1,4 +1,4 @@
-import { Component, OnInit, inject, signal } from '@angular/core';
+import { Component, DestroyRef, OnInit, inject, signal } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import {
   FormArray,
@@ -41,6 +41,10 @@ export class NotaForm implements OnInit {
   private readonly notaFiscalService = inject(NotaFiscalService);
   private readonly router = inject(Router);
   private readonly snackBar = inject(MatSnackBar);
+  // Capturado uma única vez no contexto de injeção da classe: `criarLinhaItem()`
+  // também é chamado de handlers de evento (adicionar item, sugestões da IA),
+  // onde `takeUntilDestroyed()` sem argumento lançaria NG0203.
+  private readonly destroyRef = inject(DestroyRef);
 
   protected readonly salvando = signal(false);
   protected readonly sugestoesPorLinha = signal<Produto[][]>([]);
@@ -80,10 +84,16 @@ export class NotaForm implements OnInit {
             }),
           ),
         ),
-        takeUntilDestroyed(),
+        takeUntilDestroyed(this.destroyRef),
       )
       .subscribe((produtos) => {
         const index = this.itens.controls.indexOf(linha);
+        // A linha pode já ter sido removida enquanto a busca corria: sem esta
+        // guarda, `indexOf` devolve -1 e o resultado viraria uma propriedade
+        // solta no array de sugestões.
+        if (index === -1) {
+          return;
+        }
         const atuais = [...this.sugestoesPorLinha()];
         atuais[index] = produtos;
         this.sugestoesPorLinha.set(atuais);

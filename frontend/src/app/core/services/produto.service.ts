@@ -3,7 +3,10 @@ import { Injectable, inject } from '@angular/core';
 import { Observable } from 'rxjs';
 import { Produto, ProdutoAtualizacao, ProdutoCriacao } from '../models/produto';
 
-const BASE_URL = 'http://localhost:8081';
+// Caminho relativo: o nginx (produção) e o proxy do `ng serve`
+// (desenvolvimento) repassam /api/estoque para o serviço de estoque. Assim a
+// SPA nunca faz requisição cross-origin e não há host algum no bundle.
+const BASE_URL = '/api/estoque';
 
 /**
  * Cliente HTTP fino para o serviço de estoque. Sem lógica de UI: cada
