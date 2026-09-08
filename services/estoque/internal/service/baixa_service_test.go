@@ -3,50 +3,17 @@ package service_test
 import (
 	"context"
 	"errors"
-	"os"
 	"testing"
 
-	"github.com/jackc/pgx/v5/pgxpool"
-
 	"github.com/gustavopinto244/korp-teste-gustavopinto/services/estoque/internal/domain"
-	"github.com/gustavopinto244/korp-teste-gustavopinto/services/estoque/internal/migrate"
 	"github.com/gustavopinto244/korp-teste-gustavopinto/services/estoque/internal/repository"
 	"github.com/gustavopinto244/korp-teste-gustavopinto/services/estoque/internal/service"
-	"github.com/gustavopinto244/korp-teste-gustavopinto/services/estoque/migrations"
+	"github.com/gustavopinto244/korp-teste-gustavopinto/services/estoque/internal/testdb"
 )
-
-func abrirPoolDeTesteBaixa(t *testing.T) *pgxpool.Pool {
-	t.Helper()
-
-	dsn := os.Getenv("TEST_DATABASE_URL_ESTOQUE")
-	if dsn == "" {
-		t.Skip("TEST_DATABASE_URL_ESTOQUE não definida")
-	}
-
-	ctx := context.Background()
-	pool, err := pgxpool.New(ctx, dsn)
-	if err != nil {
-		t.Fatalf("conectar ao banco: %v", err)
-	}
-	t.Cleanup(pool.Close)
-
-	if _, err := pool.Exec(ctx, "DROP SCHEMA IF EXISTS estoque CASCADE"); err != nil {
-		t.Fatalf("limpar schema: %v", err)
-	}
-	if _, err := pool.Exec(ctx, "DROP TABLE IF EXISTS public.schema_migrations"); err != nil {
-		t.Fatalf("limpar schema_migrations: %v", err)
-	}
-
-	if err := migrate.Aplicar(ctx, pool, migrations.FS, "."); err != nil {
-		t.Fatalf("aplicar migrations: %v", err)
-	}
-
-	return pool
-}
 
 func setup(t *testing.T) (*service.BaixaService, *repository.ProdutoRepository) {
 	t.Helper()
-	pool := abrirPoolDeTesteBaixa(t)
+	pool := testdb.AbrirPool(t)
 	produtoRepo := repository.NovoProdutoRepository(pool)
 	idempRepo := repository.NovoIdempotenciaRepository()
 	return service.NovoBaixaService(produtoRepo, idempRepo), produtoRepo
@@ -121,6 +88,140 @@ func TestBaixaService_SaldoInsuficiente_NenhumItemDebitado(t *testing.T) {
 	}
 	if p2.Saldo != 1 {
 		t.Fatalf("saldo de TBX-002 = %d, esperado 1 (rollback completo)", p2.Saldo)
+	}
+}
+
+// TestBaixaService_QuantidadeNegativaNaoCreditaSaldo reproduz o defeito em
+// que uma quantidade negativa passava pela checagem de saldo
+// (saldoAnterior < quantidade nunca é verdadeiro para negativos) e o
+// débito saldoAnterior - quantidade acabava *creditando* saldo. A baixa é
+// dona da invariante de saldo: quantidade não positiva é entrada inválida.
+func TestBaixaService_QuantidadeNegativaNaoCreditaSaldo(t *testing.T) {
+	baixaSvc, produtoRepo := setup(t)
+	ctx := context.Background()
+
+	if _, err := produtoRepo.Criar(ctx, "TBX-NEG", "Parafuso", 100); err != nil {
+		t.Fatalf("criar produto: %v", err)
+	}
+
+	_, err := baixaSvc.Processar(ctx, "chave-negativa", service.RequisicaoBaixa{
+		Itens: []service.ItemBaixa{{Codigo: "TBX-NEG", Quantidade: -100}},
+	})
+	if !errors.Is(err, domain.ErrValidacao) {
+		t.Fatalf("esperava domain.ErrValidacao para quantidade negativa, obteve %v", err)
+	}
+
+	produto, err := produtoRepo.BuscarPorCodigo(ctx, "TBX-NEG")
+	if err != nil {
+		t.Fatalf("buscar produto: %v", err)
+	}
+	if produto.Saldo != 100 {
+		t.Fatalf("saldo no banco = %d, esperado 100 (nenhum crédito indevido)", produto.Saldo)
+	}
+}
+
+func TestBaixaService_QuantidadeZeroRejeitada(t *testing.T) {
+	baixaSvc, produtoRepo := setup(t)
+	ctx := context.Background()
+
+	if _, err := produtoRepo.Criar(ctx, "TBX-ZERO", "Parafuso", 7); err != nil {
+		t.Fatalf("criar produto: %v", err)
+	}
+
+	_, err := baixaSvc.Processar(ctx, "chave-zero", service.RequisicaoBaixa{
+		Itens: []service.ItemBaixa{{Codigo: "TBX-ZERO", Quantidade: 0}},
+	})
+	if !errors.Is(err, domain.ErrValidacao) {
+		t.Fatalf("esperava domain.ErrValidacao para quantidade zero, obteve %v", err)
+	}
+
+	produto, err := produtoRepo.BuscarPorCodigo(ctx, "TBX-ZERO")
+	if err != nil {
+		t.Fatalf("buscar produto: %v", err)
+	}
+	if produto.Saldo != 7 {
+		t.Fatalf("saldo no banco = %d, esperado 7 (nada debitado)", produto.Saldo)
+	}
+}
+
+func TestBaixaService_ListaDeItensVaziaOuAusente(t *testing.T) {
+	baixaSvc, _ := setup(t)
+	ctx := context.Background()
+
+	casos := map[string]service.RequisicaoBaixa{
+		"lista vazia":   {Itens: []service.ItemBaixa{}},
+		"lista ausente": {},
+	}
+
+	for nome, req := range casos {
+		t.Run(nome, func(t *testing.T) {
+			_, err := baixaSvc.Processar(ctx, "chave-"+nome, req)
+			if !errors.Is(err, domain.ErrValidacao) {
+				t.Fatalf("esperava domain.ErrValidacao, obteve %v", err)
+			}
+		})
+	}
+}
+
+// Um mesmo código repetido na lista é legítimo (as quantidades se somam),
+// mas continua sujeito à validação item a item: uma ocorrência inválida
+// invalida a requisição inteira, sem debitar nada.
+func TestBaixaService_CodigoRepetidoComQuantidadeInvalida(t *testing.T) {
+	baixaSvc, produtoRepo := setup(t)
+	ctx := context.Background()
+
+	if _, err := produtoRepo.Criar(ctx, "TBX-REP", "Parafuso", 10); err != nil {
+		t.Fatalf("criar produto: %v", err)
+	}
+
+	_, err := baixaSvc.Processar(ctx, "chave-repetido-invalido", service.RequisicaoBaixa{
+		Itens: []service.ItemBaixa{
+			{Codigo: "TBX-REP", Quantidade: 3},
+			{Codigo: "TBX-REP", Quantidade: -5},
+		},
+	})
+	if !errors.Is(err, domain.ErrValidacao) {
+		t.Fatalf("esperava domain.ErrValidacao, obteve %v", err)
+	}
+
+	produto, err := produtoRepo.BuscarPorCodigo(ctx, "TBX-REP")
+	if err != nil {
+		t.Fatalf("buscar produto: %v", err)
+	}
+	if produto.Saldo != 10 {
+		t.Fatalf("saldo no banco = %d, esperado 10 (nada debitado)", produto.Saldo)
+	}
+}
+
+// Código repetido com quantidades válidas continua funcionando: as
+// quantidades se acumulam sobre o mesmo saldo.
+func TestBaixaService_CodigoRepetidoComQuantidadesValidas(t *testing.T) {
+	baixaSvc, produtoRepo := setup(t)
+	ctx := context.Background()
+
+	if _, err := produtoRepo.Criar(ctx, "TBX-SOMA", "Parafuso", 10); err != nil {
+		t.Fatalf("criar produto: %v", err)
+	}
+
+	resp, err := baixaSvc.Processar(ctx, "chave-repetido-valido", service.RequisicaoBaixa{
+		Itens: []service.ItemBaixa{
+			{Codigo: "TBX-SOMA", Quantidade: 3},
+			{Codigo: "TBX-SOMA", Quantidade: 2},
+		},
+	})
+	if err != nil {
+		t.Fatalf("erro inesperado: %v", err)
+	}
+	if len(resp.Itens) != 2 || resp.Itens[1].SaldoAtual != 5 {
+		t.Fatalf("resposta inesperada: %+v", resp)
+	}
+
+	produto, err := produtoRepo.BuscarPorCodigo(ctx, "TBX-SOMA")
+	if err != nil {
+		t.Fatalf("buscar produto: %v", err)
+	}
+	if produto.Saldo != 5 {
+		t.Fatalf("saldo no banco = %d, esperado 5", produto.Saldo)
 	}
 }
 

@@ -2,47 +2,23 @@ package httpserver_test
 
 import (
 	"bytes"
-	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
-	"os"
 	"testing"
-
-	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/gustavopinto244/korp-teste-gustavopinto/services/estoque/internal/httpserver"
 	"github.com/gustavopinto244/korp-teste-gustavopinto/services/estoque/internal/httpserver/handler"
-	"github.com/gustavopinto244/korp-teste-gustavopinto/services/estoque/internal/migrate"
 	"github.com/gustavopinto244/korp-teste-gustavopinto/services/estoque/internal/repository"
 	"github.com/gustavopinto244/korp-teste-gustavopinto/services/estoque/internal/service"
-	"github.com/gustavopinto244/korp-teste-gustavopinto/services/estoque/migrations"
+	"github.com/gustavopinto244/korp-teste-gustavopinto/services/estoque/internal/testdb"
 )
 
 func subirServidorDeTeste(t *testing.T) *httptest.Server {
 	t.Helper()
 
-	dsn := os.Getenv("TEST_DATABASE_URL_ESTOQUE")
-	if dsn == "" {
-		t.Skip("TEST_DATABASE_URL_ESTOQUE não definida")
-	}
-
-	ctx := context.Background()
-	pool, err := pgxpool.New(ctx, dsn)
-	if err != nil {
-		t.Fatalf("conectar ao banco: %v", err)
-	}
-	t.Cleanup(pool.Close)
-
-	if _, err := pool.Exec(ctx, "DROP SCHEMA IF EXISTS estoque CASCADE"); err != nil {
-		t.Fatalf("limpar schema: %v", err)
-	}
-	if _, err := pool.Exec(ctx, "DROP TABLE IF EXISTS public.schema_migrations"); err != nil {
-		t.Fatalf("limpar schema_migrations: %v", err)
-	}
-	if err := migrate.Aplicar(ctx, pool, migrations.FS, "."); err != nil {
-		t.Fatalf("aplicar migrations: %v", err)
-	}
+	pool := testdb.AbrirPool(t)
 
 	produtoRepo := repository.NovoProdutoRepository(pool)
 	idempRepo := repository.NovoIdempotenciaRepository()
@@ -244,5 +220,87 @@ func TestRouter_Baixa(t *testing.T) {
 	resp.Body.Close()
 	if produto.Saldo != 8 {
 		t.Fatalf("saldo final = %d, esperado 8 (debitado uma única vez)", produto.Saldo)
+	}
+}
+
+// TestRouter_BaixaRejeitaQuantidadeInvalida cobre, no nível HTTP, o defeito
+// em que POST /produtos/baixa com quantidade negativa respondia 200 e
+// *creditava* saldo. Todas as entradas inválidas devem virar 422 VALIDACAO
+// sem tocar no saldo.
+func TestRouter_BaixaRejeitaQuantidadeInvalida(t *testing.T) {
+	srv := subirServidorDeTeste(t)
+
+	resp := doJSON(t, http.MethodPost, srv.URL+"/produtos", map[string]any{
+		"codigo": "BAIXA-INV", "descricao": "Produto para baixa inválida", "saldo": 100,
+	}, nil)
+	if resp.StatusCode != http.StatusCreated {
+		t.Fatalf("criar produto: status = %d", resp.StatusCode)
+	}
+	resp.Body.Close()
+
+	casos := []struct {
+		nome  string
+		corpo map[string]any
+	}{
+		{
+			nome:  "quantidade negativa",
+			corpo: map[string]any{"itens": []map[string]any{{"codigo": "BAIXA-INV", "quantidade": -100}}},
+		},
+		{
+			nome:  "quantidade zero",
+			corpo: map[string]any{"itens": []map[string]any{{"codigo": "BAIXA-INV", "quantidade": 0}}},
+		},
+		{
+			nome:  "lista de itens vazia",
+			corpo: map[string]any{"itens": []map[string]any{}},
+		},
+		{
+			nome:  "lista de itens ausente",
+			corpo: map[string]any{},
+		},
+	}
+
+	for i, c := range casos {
+		t.Run(c.nome, func(t *testing.T) {
+			resp := doJSON(t, http.MethodPost, srv.URL+"/produtos/baixa", c.corpo,
+				map[string]string{"Idempotency-Key": fmt.Sprintf("baixa-invalida-%d", i)})
+			defer resp.Body.Close()
+
+			if resp.StatusCode != http.StatusUnprocessableEntity {
+				t.Fatalf("status = %d, esperado 422", resp.StatusCode)
+			}
+
+			var envelope struct {
+				Erro struct {
+					Codigo    string `json:"codigo"`
+					Tipo      string `json:"tipo"`
+					Repetivel bool   `json:"repetivel"`
+					Mensagem  string `json:"mensagem"`
+				} `json:"erro"`
+			}
+			if err := json.NewDecoder(resp.Body).Decode(&envelope); err != nil {
+				t.Fatalf("decodificar envelope de erro: %v", err)
+			}
+			if envelope.Erro.Codigo != "VALIDACAO" || envelope.Erro.Tipo != "negocio" || envelope.Erro.Repetivel {
+				t.Fatalf("envelope de erro inesperado: %+v", envelope.Erro)
+			}
+			if envelope.Erro.Mensagem == "" {
+				t.Fatalf("mensagem de erro vazia")
+			}
+		})
+	}
+
+	// O saldo não pode ter sido creditado nem debitado por nenhuma das
+	// requisições inválidas acima.
+	resp = doJSON(t, http.MethodGet, srv.URL+"/produtos/BAIXA-INV", nil, nil)
+	var produto struct {
+		Saldo int `json:"saldo"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&produto); err != nil {
+		t.Fatalf("decodificar produto: %v", err)
+	}
+	resp.Body.Close()
+	if produto.Saldo != 100 {
+		t.Fatalf("saldo final = %d, esperado 100 (intocado)", produto.Saldo)
 	}
 }

@@ -1,4 +1,4 @@
-INSERT INTO estoque.produto (codigo, descricao, saldo) VALUES
+INSERT INTO produto (codigo, descricao, saldo) VALUES
     ('PARAF-001', 'Parafuso sextavado M6', 100),
     ('MART-002',  'Martelo de borracha', 30),
     ('DISCO-003', 'Disco de corte 115mm', 50),

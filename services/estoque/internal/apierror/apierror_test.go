@@ -18,6 +18,10 @@ func TestEscreverErro(t *testing.T) {
 		codigoEsperado string
 		tipoEsperado   string
 		repetivelEsper bool
+		// mensagemEsperada, quando preenchida, exige a mensagem literal —
+		// usado nos códigos cujo texto é parte do contrato compartilhado
+		// com o serviço de faturamento.
+		mensagemEsperada string
 	}{
 		{
 			nome:           "produto não encontrado",
@@ -72,12 +76,16 @@ func TestEscreverErro(t *testing.T) {
 			repetivelEsper: false,
 		},
 		{
-			nome:           "erro inesperado",
-			err:            errors.New("boom"),
-			statusEsperado: 500,
-			codigoEsperado: "ERRO_INTERNO",
-			tipoEsperado:   apierror.TipoSistema,
-			repetivelEsper: true,
+			// Formato canônico de ERRO_INTERNO, comum aos dois
+			// microsserviços e consumido pelo frontend. Qualquer alteração
+			// aqui precisa ser espelhada no serviço de faturamento.
+			nome:             "erro inesperado",
+			err:              errors.New("boom"),
+			statusEsperado:   500,
+			codigoEsperado:   "ERRO_INTERNO",
+			tipoEsperado:     apierror.TipoSistema,
+			repetivelEsper:   true,
+			mensagemEsperada: "Ocorreu um erro inesperado. Tente novamente em instantes.",
 		},
 	}
 
@@ -106,6 +114,9 @@ func TestEscreverErro(t *testing.T) {
 			}
 			if envelope.Erro.Mensagem == "" {
 				t.Errorf("mensagem vazia")
+			}
+			if c.mensagemEsperada != "" && envelope.Erro.Mensagem != c.mensagemEsperada {
+				t.Errorf("mensagem = %q, esperada %q", envelope.Erro.Mensagem, c.mensagemEsperada)
 			}
 		})
 	}

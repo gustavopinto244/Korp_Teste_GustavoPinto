@@ -15,8 +15,8 @@ type RegistroIdempotencia struct {
 	RespostaJSON []byte
 }
 
-// IdempotenciaRepository encapsula o acesso à tabela
-// estoque.idempotencia_baixa.
+// IdempotenciaRepository encapsula o acesso à tabela idempotencia_baixa do
+// schema apontado pelo search_path da conexão.
 type IdempotenciaRepository struct{}
 
 // NovoIdempotenciaRepository cria um IdempotenciaRepository. Não guarda
@@ -32,7 +32,7 @@ func NovoIdempotenciaRepository() *IdempotenciaRepository {
 func (r *IdempotenciaRepository) BuscarPorChaveTx(ctx context.Context, tx DBTX, chave string) (*RegistroIdempotencia, error) {
 	row := tx.QueryRow(ctx, `
 		SELECT chave, status_http, resposta_json
-		FROM estoque.idempotencia_baixa
+		FROM idempotencia_baixa
 		WHERE chave = $1`,
 		chave,
 	)
@@ -51,7 +51,7 @@ func (r *IdempotenciaRepository) BuscarPorChaveTx(ctx context.Context, tx DBTX, 
 // replay em chamadas futuras com a mesma chave.
 func (r *IdempotenciaRepository) SalvarTx(ctx context.Context, tx DBTX, chave string, statusHTTP int, respostaJSON []byte) error {
 	_, err := tx.Exec(ctx, `
-		INSERT INTO estoque.idempotencia_baixa (chave, status_http, resposta_json)
+		INSERT INTO idempotencia_baixa (chave, status_http, resposta_json)
 		VALUES ($1, $2, $3)`,
 		chave, statusHTTP, respostaJSON,
 	)

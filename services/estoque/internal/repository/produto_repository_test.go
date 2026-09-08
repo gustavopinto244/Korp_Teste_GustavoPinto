@@ -2,48 +2,15 @@ package repository_test
 
 import (
 	"context"
-	"os"
 	"testing"
 
-	"github.com/jackc/pgx/v5/pgxpool"
-
 	"github.com/gustavopinto244/korp-teste-gustavopinto/services/estoque/internal/domain"
-	"github.com/gustavopinto244/korp-teste-gustavopinto/services/estoque/internal/migrate"
 	"github.com/gustavopinto244/korp-teste-gustavopinto/services/estoque/internal/repository"
-	"github.com/gustavopinto244/korp-teste-gustavopinto/services/estoque/migrations"
+	"github.com/gustavopinto244/korp-teste-gustavopinto/services/estoque/internal/testdb"
 )
 
-func abrirPoolDeTeste(t *testing.T) *pgxpool.Pool {
-	t.Helper()
-
-	dsn := os.Getenv("TEST_DATABASE_URL_ESTOQUE")
-	if dsn == "" {
-		t.Skip("TEST_DATABASE_URL_ESTOQUE não definida")
-	}
-
-	ctx := context.Background()
-	pool, err := pgxpool.New(ctx, dsn)
-	if err != nil {
-		t.Fatalf("conectar ao banco: %v", err)
-	}
-	t.Cleanup(pool.Close)
-
-	if _, err := pool.Exec(ctx, "DROP SCHEMA IF EXISTS estoque CASCADE"); err != nil {
-		t.Fatalf("limpar schema: %v", err)
-	}
-	if _, err := pool.Exec(ctx, "DROP TABLE IF EXISTS public.schema_migrations"); err != nil {
-		t.Fatalf("limpar schema_migrations: %v", err)
-	}
-
-	if err := migrate.Aplicar(ctx, pool, migrations.FS, "."); err != nil {
-		t.Fatalf("aplicar migrations: %v", err)
-	}
-
-	return pool
-}
-
 func TestProdutoRepository_CRUD(t *testing.T) {
-	pool := abrirPoolDeTeste(t)
+	pool := testdb.AbrirPool(t)
 	repo := repository.NovoProdutoRepository(pool)
 	ctx := context.Background()
 
@@ -118,7 +85,7 @@ func TestProdutoRepository_CRUD(t *testing.T) {
 }
 
 func TestProdutoRepository_SaldoNaoNegativo(t *testing.T) {
-	pool := abrirPoolDeTeste(t)
+	pool := testdb.AbrirPool(t)
 	repo := repository.NovoProdutoRepository(pool)
 	ctx := context.Background()
 

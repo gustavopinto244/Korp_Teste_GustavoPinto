@@ -1,5 +1,11 @@
 // Package repository implementa o acesso a dados do serviço de estoque
 // usando pgx/v5 (pgxpool), sem ORM.
+//
+// Nenhuma consulta qualifica o schema: as tabelas são resolvidas pelo
+// search_path da conexão (DATABASE_URL / TEST_DATABASE_URL_ESTOQUE). É o
+// que permite ao mesmo código operar sobre o schema de produção
+// ("estoque") e sobre o schema isolado da suíte de testes
+// ("estoque_test").
 package repository
 
 import (
@@ -22,7 +28,8 @@ type DBTX interface {
 	QueryRow(ctx context.Context, sql string, args ...any) pgx.Row
 }
 
-// ProdutoRepository encapsula todo o acesso à tabela estoque.produto.
+// ProdutoRepository encapsula todo o acesso à tabela produto do schema
+// apontado pelo search_path da conexão.
 type ProdutoRepository struct {
 	pool *pgxpool.Pool
 }
@@ -56,7 +63,7 @@ func escanearProduto(row pgx.Row) (*domain.Produto, error) {
 // existir um produto com o mesmo código.
 func (r *ProdutoRepository) Criar(ctx context.Context, codigo, descricao string, saldo int) (*domain.Produto, error) {
 	row := r.pool.QueryRow(ctx, `
-		INSERT INTO estoque.produto (codigo, descricao, saldo)
+		INSERT INTO produto (codigo, descricao, saldo)
 		VALUES ($1, $2, $3)
 		RETURNING `+colunasProduto,
 		codigo, descricao, saldo,
@@ -77,7 +84,7 @@ func (r *ProdutoRepository) Criar(ctx context.Context, codigo, descricao string,
 func (r *ProdutoRepository) Listar(ctx context.Context) ([]domain.Produto, error) {
 	rows, err := r.pool.Query(ctx, `
 		SELECT `+colunasProduto+`
-		FROM estoque.produto
+		FROM produto
 		ORDER BY codigo`,
 	)
 	if err != nil {
@@ -108,7 +115,7 @@ func (r *ProdutoRepository) Listar(ctx context.Context) ([]domain.Produto, error
 func (r *ProdutoRepository) BuscarPorCodigo(ctx context.Context, codigo string) (*domain.Produto, error) {
 	row := r.pool.QueryRow(ctx, `
 		SELECT `+colunasProduto+`
-		FROM estoque.produto
+		FROM produto
 		WHERE codigo = $1`,
 		codigo,
 	)
@@ -119,7 +126,7 @@ func (r *ProdutoRepository) BuscarPorCodigo(ctx context.Context, codigo string) 
 // domain.ErrProdutoNaoEncontrado se o código não existir.
 func (r *ProdutoRepository) Atualizar(ctx context.Context, codigo, descricao string, saldo int) (*domain.Produto, error) {
 	row := r.pool.QueryRow(ctx, `
-		UPDATE estoque.produto
+		UPDATE produto
 		SET descricao = $2, saldo = $3, atualizado_em = now()
 		WHERE codigo = $1
 		RETURNING `+colunasProduto,
@@ -131,7 +138,7 @@ func (r *ProdutoRepository) Atualizar(ctx context.Context, codigo, descricao str
 // Remover exclui um produto pelo código. Devolve
 // domain.ErrProdutoNaoEncontrado se o código não existir.
 func (r *ProdutoRepository) Remover(ctx context.Context, codigo string) error {
-	tag, err := r.pool.Exec(ctx, `DELETE FROM estoque.produto WHERE codigo = $1`, codigo)
+	tag, err := r.pool.Exec(ctx, `DELETE FROM produto WHERE codigo = $1`, codigo)
 	if err != nil {
 		return err
 	}
@@ -148,7 +155,7 @@ func (r *ProdutoRepository) Remover(ctx context.Context, codigo string) error {
 func (r *ProdutoRepository) BuscarPorCodigoParaAtualizarTx(ctx context.Context, tx DBTX, codigo string) (*domain.Produto, error) {
 	row := tx.QueryRow(ctx, `
 		SELECT `+colunasProduto+`
-		FROM estoque.produto
+		FROM produto
 		WHERE codigo = $1
 		FOR UPDATE`,
 		codigo,
@@ -160,7 +167,7 @@ func (r *ProdutoRepository) BuscarPorCodigoParaAtualizarTx(ctx context.Context, 
 // uma transação.
 func (r *ProdutoRepository) AtualizarSaldoTx(ctx context.Context, tx DBTX, id int64, novoSaldo int) error {
 	_, err := tx.Exec(ctx, `
-		UPDATE estoque.produto
+		UPDATE produto
 		SET saldo = $2, atualizado_em = now()
 		WHERE id = $1`,
 		id, novoSaldo,

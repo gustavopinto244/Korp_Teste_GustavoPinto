@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 
 	"github.com/gustavopinto244/korp-teste-gustavopinto/services/estoque/internal/domain"
 	"github.com/gustavopinto244/korp-teste-gustavopinto/services/estoque/internal/repository"
@@ -46,16 +47,56 @@ func NovoBaixaService(produtoRepo *repository.ProdutoRepository, idempRepo *repo
 	return &BaixaService{produtoRepo: produtoRepo, idempRepo: idempRepo}
 }
 
+// validarRequisicaoBaixa rejeita entradas que violariam a invariante de
+// saldo antes de qualquer acesso ao banco. A baixa é a dona dessa
+// invariante: sem esta validação, uma quantidade negativa passa ileso pela
+// checagem `saldoAnterior < item.Quantidade` (nunca verdadeira para
+// negativos) e o débito `saldoAnterior - item.Quantidade` acaba
+// *creditando* saldo — algo que o CHECK (saldo >= 0) do banco não barra,
+// pois o valor sobe.
+//
+// Um mesmo código repetido na lista continua sendo aceito (as quantidades
+// se somam sobre o saldo corrente), mas cada ocorrência é validada
+// individualmente: basta uma inválida para a requisição inteira ser
+// rejeitada, sem debitar nada.
+func validarRequisicaoBaixa(req RequisicaoBaixa) error {
+	if len(req.Itens) == 0 {
+		return fmt.Errorf("%w: a baixa exige ao menos um item", domain.ErrValidacao)
+	}
+
+	for _, item := range req.Itens {
+		if strings.TrimSpace(item.Codigo) == "" {
+			return fmt.Errorf("%w: código do produto é obrigatório em todos os itens", domain.ErrValidacao)
+		}
+		if item.Quantidade <= 0 {
+			return fmt.Errorf(
+				"%w: quantidade do produto %s deve ser maior que zero (recebido: %d)",
+				domain.ErrValidacao, item.Codigo, item.Quantidade,
+			)
+		}
+	}
+
+	return nil
+}
+
 // Processar executa a baixa descrita em req sob a chave de idempotência
 // informada. Toda a operação — checagem de idempotência, validação de
 // saldo de cada item e débito — corre em uma única transação: ou tudo é
 // aplicado, ou nada é.
+//
+// A requisição é validada antes de a transação abrir: lista de itens vazia
+// ou quantidade não positiva devolvem domain.ErrValidacao (422) sem tocar
+// no banco.
 //
 // Se chave já tiver sido usada com o mesmo conjunto de itens, devolve o
 // resultado salvo anteriormente sem debitar de novo (replay). Se chave já
 // tiver sido usada com um conjunto de itens diferente, devolve
 // domain.ErrChaveIdempotenciaConflitante.
 func (s *BaixaService) Processar(ctx context.Context, chave string, req RequisicaoBaixa) (*RespostaBaixa, error) {
+	if err := validarRequisicaoBaixa(req); err != nil {
+		return nil, err
+	}
+
 	pool := s.produtoRepo.Pool()
 
 	tx, err := pool.Begin(ctx)
