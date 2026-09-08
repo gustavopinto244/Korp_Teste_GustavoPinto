@@ -1,0 +1,27 @@
+.app-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 2rem;
+
+  &__titulo {
+    font-weight: 500;
+  }
+
+  &__nav {
+    display: flex;
+    gap: 1rem;
+
+    a {
+      color: inherit;
+      text-decoration: none;
+      opacity: 0.85;
+      padding: 0.25rem 0;
+      border-bottom: 2px solid transparent;
+    }
+  }
+
+  &__link--ativo {
+    opacity: 1;
+    border-bottom-color: currentColor;
+  }
+}

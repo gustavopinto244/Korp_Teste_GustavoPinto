@@ -1,0 +1,28 @@
+.produto-form {
+  padding: 1.5rem;
+  max-width: 480px;
+  margin: 0 auto;
+
+  &__form {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+
+  &__acoes {
+    display: flex;
+    justify-content: flex-end;
+    gap: 0.5rem;
+    margin-top: 1rem;
+  }
+
+  &__carregando {
+    display: flex;
+    justify-content: center;
+    padding: 2rem;
+  }
+
+  mat-form-field {
+    width: 100%;
+  }
+}

@@ -1,0 +1,26 @@
+.nota-form {
+  padding: 1.5rem;
+  max-width: 720px;
+  margin: 0 auto;
+
+  &__linha {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.5rem;
+  }
+
+  &__campo-produto {
+    flex: 3;
+  }
+
+  &__campo-quantidade {
+    flex: 1;
+  }
+
+  &__acoes {
+    display: flex;
+    justify-content: flex-end;
+    gap: 0.5rem;
+    margin-top: 1rem;
+  }
+}

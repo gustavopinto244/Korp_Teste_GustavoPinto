@@ -1,0 +1,60 @@
+<div class="nota-form">
+  <h1>Nova nota fiscal</h1>
+
+  <app-ia-sugestao (itensSugeridos)="aoReceberSugestoes($event)" />
+
+  <form [formGroup]="form" (ngSubmit)="salvar()" class="nota-form__form">
+    <div formArrayName="itens" class="nota-form__itens">
+      @for (linha of itens.controls; track linha; let i = $index) {
+        <div [formGroupName]="i" class="nota-form__linha">
+          <mat-form-field appearance="outline" class="nota-form__campo-produto">
+            <mat-label>Produto</mat-label>
+            <input
+              matInput
+              formControlName="produtoDescricao"
+              [matAutocomplete]="auto"
+              placeholder="Buscar por código ou descrição"
+            />
+            <mat-autocomplete #auto="matAutocomplete" (optionSelected)="selecionarProduto(i, $event.option.value)">
+              @for (produto of sugestoesPorLinha()[i]; track produto.id) {
+                <mat-option [value]="produto">
+                  {{ produto.codigo }} - {{ produto.descricao }}
+                </mat-option>
+              }
+            </mat-autocomplete>
+            @if (linha.get('produtoCodigo')?.hasError('required') && linha.get('produtoCodigo')?.touched) {
+              <mat-error>Selecione um produto.</mat-error>
+            }
+          </mat-form-field>
+
+          <mat-form-field appearance="outline" class="nota-form__campo-quantidade">
+            <mat-label>Quantidade</mat-label>
+            <input matInput type="number" formControlName="quantidade" />
+          </mat-form-field>
+
+          <button
+            mat-icon-button
+            type="button"
+            (click)="removerLinha(i)"
+            [disabled]="itens.length === 1"
+            aria-label="Remover item"
+          >
+            <mat-icon>delete</mat-icon>
+          </button>
+        </div>
+      }
+    </div>
+
+    <button mat-stroked-button type="button" (click)="adicionarLinha()">
+      <mat-icon>add</mat-icon>
+      Adicionar item
+    </button>
+
+    <div class="nota-form__acoes">
+      <button mat-button type="button" (click)="cancelar()">Cancelar</button>
+      <button mat-flat-button color="primary" type="submit" [disabled]="salvando()">
+        Salvar nota
+      </button>
+    </div>
+  </form>
+</div>

@@ -1,0 +1,38 @@
+.nota-lista {
+  padding: 1.5rem;
+  max-width: 960px;
+  margin: 0 auto;
+
+  &__cabecalho {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 1rem;
+  }
+
+  &__carregando {
+    display: flex;
+    justify-content: center;
+    padding: 2rem;
+  }
+
+  &__vazio {
+    text-align: center;
+    color: var(--mat-sys-on-surface-variant);
+    padding: 1rem;
+  }
+
+  &__chip--aberta {
+    background-color: #c8e6c9 !important;
+    color: #1b5e20 !important;
+  }
+
+  &__chip--fechada {
+    background-color: #e0e0e0 !important;
+    color: #424242 !important;
+  }
+
+  table {
+    width: 100%;
+  }
+}

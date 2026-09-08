@@ -1,0 +1,41 @@
+.nota-detalhe {
+  padding: 1.5rem;
+  max-width: 720px;
+  margin: 0 auto;
+
+  &__cabecalho {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    margin-bottom: 0.5rem;
+  }
+
+  &__fechado-em {
+    color: var(--mat-sys-on-surface-variant);
+    margin-top: 0;
+  }
+
+  &__carregando {
+    display: flex;
+    justify-content: center;
+    padding: 2rem;
+  }
+
+  &__acoes {
+    margin-top: 1.5rem;
+  }
+
+  &__chip--aberta {
+    background-color: #c8e6c9 !important;
+    color: #1b5e20 !important;
+  }
+
+  &__chip--fechada {
+    background-color: #e0e0e0 !important;
+    color: #424242 !important;
+  }
+
+  table {
+    width: 100%;
+  }
+}

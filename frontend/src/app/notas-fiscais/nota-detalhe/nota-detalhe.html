@@ -1,0 +1,43 @@
+<div class="nota-detalhe">
+  @if (carregando()) {
+    <div class="nota-detalhe__carregando">
+      <mat-spinner diameter="32" />
+    </div>
+  } @else if (nota(); as n) {
+    <header class="nota-detalhe__cabecalho">
+      <h1>Nota fiscal #{{ n.numero }}</h1>
+      <mat-chip [class.nota-detalhe__chip--aberta]="n.status === 'Aberta'"
+                [class.nota-detalhe__chip--fechada]="n.status === 'Fechada'">
+        {{ n.status }}
+      </mat-chip>
+    </header>
+
+    @if (n.fechadoEm) {
+      <p class="nota-detalhe__fechado-em">Fechada em {{ n.fechadoEm | date: 'dd/MM/yyyy HH:mm' }}</p>
+    }
+
+    <table mat-table [dataSource]="n.itens" class="mat-elevation-z1">
+      <ng-container matColumnDef="produtoCodigo">
+        <th mat-header-cell *matHeaderCellDef>Código</th>
+        <td mat-cell *matCellDef="let item">{{ item.produtoCodigo }}</td>
+      </ng-container>
+
+      <ng-container matColumnDef="produtoDescricao">
+        <th mat-header-cell *matHeaderCellDef>Descrição</th>
+        <td mat-cell *matCellDef="let item">{{ item.produtoDescricao }}</td>
+      </ng-container>
+
+      <ng-container matColumnDef="quantidade">
+        <th mat-header-cell *matHeaderCellDef>Quantidade</th>
+        <td mat-cell *matCellDef="let item">{{ item.quantidade }}</td>
+      </ng-container>
+
+      <tr mat-header-row *matHeaderRowDef="colunas"></tr>
+      <tr mat-row *matRowDef="let row; columns: colunas"></tr>
+    </table>
+
+    <div class="nota-detalhe__acoes">
+      <app-botao-imprimir [nota]="n" (notaAtualizada)="aoAtualizarNota($event)" />
+    </div>
+  }
+</div>

@@ -1,0 +1,38 @@
+<div class="ia-sugestao">
+  <mat-form-field appearance="outline" class="ia-sugestao__campo">
+    <mat-label>Descreva os itens em linguagem natural</mat-label>
+    <input matInput [(ngModel)]="texto" placeholder="Ex: 3 parafusos sextavados e 2 martelos" />
+  </mat-form-field>
+
+  <button
+    mat-stroked-button
+    color="primary"
+    type="button"
+    [disabled]="interpretando() || !texto.trim()"
+    (click)="sugerir()"
+  >
+    @if (interpretando()) {
+      <mat-spinner diameter="18" />
+    } @else {
+      <ng-container>
+        <mat-icon>auto_awesome</mat-icon>
+        Sugerir itens com IA
+      </ng-container>
+    }
+  </button>
+
+  @if (mensagemErro()) {
+    <p class="ia-sugestao__aviso">{{ mensagemErro() }}</p>
+  }
+
+  @if (itensNaoReconhecidos().length > 0) {
+    <div class="ia-sugestao__nao-reconhecidos">
+      <p>Alguns itens não foram reconhecidos:</p>
+      <ul>
+        @for (item of itensNaoReconhecidos(); track item.textoOriginal) {
+          <li>"{{ item.textoOriginal }}" — {{ item.motivo }}</li>
+        }
+      </ul>
+    </div>
+  }
+</div>

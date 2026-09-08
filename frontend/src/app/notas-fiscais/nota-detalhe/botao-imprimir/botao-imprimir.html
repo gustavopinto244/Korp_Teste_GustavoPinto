@@ -1,0 +1,15 @@
+<button
+  mat-flat-button
+  color="primary"
+  [disabled]="desabilitado"
+  [matTooltip]="tooltip ?? ''"
+  [matTooltipDisabled]="!tooltip"
+  (click)="imprimir()"
+>
+  @if (estado() === 'processando') {
+    <mat-spinner diameter="18" />
+    Imprimindo...
+  } @else {
+    Imprimir
+  }
+</button>

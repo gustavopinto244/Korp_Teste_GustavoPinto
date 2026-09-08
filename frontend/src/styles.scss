@@ -37,3 +37,21 @@ body {
   height: 100%;
 }
 /* You can add global styles to this file, and also import other style files */
+
+// Diferenciação visual de snackbars de erro por tipo (contrato único de erro
+// da API): "negocio" é algo que o usuário pode resolver, "sistema" é uma
+// falha transitória/técnica.
+.erro-negocio {
+  --mdc-snackbar-container-color: #fff3e0;
+  --mdc-snackbar-supporting-text-color: #e65100;
+}
+
+.erro-sistema {
+  --mdc-snackbar-container-color: #ffebee;
+  --mdc-snackbar-supporting-text-color: #b71c1c;
+}
+
+.sucesso-impressao {
+  --mdc-snackbar-container-color: #e8f5e9;
+  --mdc-snackbar-supporting-text-color: #1b5e20;
+}
