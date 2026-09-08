@@ -1,0 +1,23 @@
+# Ferramentas de assistência interna — não faz parte da entrega
+.claude/
+
+# Ambiente
+.env
+.env.*
+!.env.example
+
+# Go
+services/**/bin/
+services/**/*.exe
+services/**/vendor/
+
+# Node / Angular
+frontend/node_modules/
+frontend/dist/
+frontend/.angular/
+
+# Editor / SO
+.vscode/
+.idea/
+*.log
+.DS_Store
