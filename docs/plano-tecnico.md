@@ -2,24 +2,52 @@
 
 Repositório de entrega: [`gustavopinto244/Korp_Teste_GustavoPinto`](https://github.com/gustavopinto244/Korp_Teste_GustavoPinto).
 
-Este documento é a fonte única de verdade técnica do desafio, escrita antes da
-primeira linha de código. Ele detalha, em nível de implementação, as decisões
-já fixadas no `CLAUDE.md` da raiz (Go nos dois microsserviços, PostgreSQL,
-schemas separados por serviço, estoque confirma a baixa antes de a nota
-fechar, chave de idempotência determinística por nota, Angular Material,
-Docker Compose com falha demonstrável ao vivo, IA por linguagem natural na
-criação de nota). Nenhuma decisão ali é reaberta aqui.
+Este documento é a referência técnica do desafio. Foi escrito antes da primeira
+linha de código e **mantido em sincronia com o que foi implementado**: onde a
+implementação divergiu do plano, o texto descreve o que existe hoje e registra
+a divergência, em vez de preservar a intenção original. Ele detalha, em nível
+de implementação, as decisões já fixadas no `CLAUDE.md` da raiz (Go nos dois
+microsserviços, PostgreSQL, schemas separados por serviço, estoque confirma a
+baixa antes de a nota fechar, chave de idempotência determinística por nota,
+Angular Material, Docker Compose com falha demonstrável ao vivo, IA por
+linguagem natural na criação de nota).
+
+Para *como rodar*, ver [`README.md`](../README.md); para as respostas ao
+checklist do enunciado, [`DETALHAMENTO_TECNICO.md`](../DETALHAMENTO_TECNICO.md).
 
 ---
 
 ## 1. Modelo de dados completo
 
+### 1.0 Como o schema é resolvido (vale para 1.1 e 1.2)
+
+Nenhuma migration nomeia o schema em que escreve. A SQL é **não qualificada**
+e o schema alvo vem do `search_path` da conexão (`DATABASE_URL` em produção,
+`TEST_DATABASE_URL_*` nos testes). Quem resolve isso é o runner próprio
+`internal/migrate`, presente nos dois serviços:
+
+1. lê `current_setting('search_path')` e toma o primeiro schema utilizável —
+   `estoque` em produção, `estoque_test` na suíte;
+2. executa `CREATE SCHEMA IF NOT EXISTS` nesse nome (por isso não existe
+   `CREATE SCHEMA` dentro de nenhum `.sql`: o nome é dinâmico e não caberia num
+   arquivo estático);
+3. mantém a tabela de controle `schema_migrations` **dentro do schema do
+   serviço**, não em `public` — uma tabela de controle compartilhada entre os
+   dois microsserviços impediria qualquer isolamento real;
+4. aplica cada migration pendente em uma transação, precedida de
+   `SET LOCAL search_path`, e registra a versão aplicada na mesma transação.
+
+O ganho concreto: o mesmo arquivo `.sql` serve ao schema de produção e a um
+schema de teste descartável, então a suíte de integração pode derrubar e
+recriar o schema inteiro a cada execução sem tocar nos dados da demo. Os blocos
+abaixo mostram os objetos como as migrations os criam (sem prefixo), com o
+schema de produção indicado no título de cada seção.
+
 ### 1.1 Serviço `estoque` — schema `estoque`
 
 ```sql
-CREATE SCHEMA IF NOT EXISTS estoque;
-
-CREATE TABLE estoque.produto (
+-- migrations/0001_create_schema_e_produto.sql
+CREATE TABLE produto (
     id            BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     codigo        VARCHAR(50)  NOT NULL,
     descricao     VARCHAR(200) NOT NULL,
@@ -31,17 +59,21 @@ CREATE TABLE estoque.produto (
     CONSTRAINT ck_produto_saldo_nao_negativo CHECK (saldo >= 0)
 );
 
-CREATE INDEX idx_produto_codigo ON estoque.produto (codigo);
+CREATE INDEX idx_produto_codigo ON produto (codigo);
 
+-- migrations/0002_create_idempotencia_baixa.sql
 -- Guarda o resultado de uma baixa já processada, para replay idempotente
-CREATE TABLE estoque.idempotencia_baixa (
+CREATE TABLE idempotencia_baixa (
     chave         VARCHAR(100) PRIMARY KEY,   -- ex: 'impressao-nota-42'
     status_http   INTEGER      NOT NULL,      -- 200, 409, 422 etc — resposta original
     resposta_json JSONB        NOT NULL,      -- corpo de resposta original, para replay exato
     criado_em     TIMESTAMPTZ  NOT NULL DEFAULT now()
 );
 
-CREATE INDEX idx_idempotencia_criado_em ON estoque.idempotencia_baixa (criado_em);
+CREATE INDEX idx_idempotencia_criado_em ON idempotencia_baixa (criado_em);
+
+-- migrations/0003_seed_produtos.sql: catálogo de exemplo, com
+-- ON CONFLICT (codigo) DO NOTHING para ser reaplicável sem efeito colateral.
 ```
 
 Notas de design:
@@ -55,14 +87,16 @@ Notas de design:
 
 ### 1.2 Serviço `faturamento` — schema `faturamento`
 
+Mesmo mecanismo da seção 1.0: SQL não qualificada, schema criado pelo runner
+a partir do `search_path`.
+
 ```sql
-CREATE SCHEMA IF NOT EXISTS faturamento;
+-- migrations/0001_create_schema_e_nota.sql
+CREATE SEQUENCE nota_fiscal_numero_seq START WITH 1 INCREMENT BY 1;
 
-CREATE SEQUENCE faturamento.nota_fiscal_numero_seq START WITH 1 INCREMENT BY 1;
-
-CREATE TABLE faturamento.nota_fiscal (
+CREATE TABLE nota_fiscal (
     id         BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-    numero     BIGINT NOT NULL DEFAULT nextval('faturamento.nota_fiscal_numero_seq'),
+    numero     BIGINT NOT NULL DEFAULT nextval('nota_fiscal_numero_seq'),
     status     VARCHAR(10) NOT NULL DEFAULT 'Aberta',
     criado_em  TIMESTAMPTZ NOT NULL DEFAULT now(),
     fechado_em TIMESTAMPTZ NULL,
@@ -71,11 +105,11 @@ CREATE TABLE faturamento.nota_fiscal (
     CONSTRAINT ck_nota_status CHECK (status IN ('Aberta', 'Fechada'))
 );
 
-ALTER SEQUENCE faturamento.nota_fiscal_numero_seq OWNED BY faturamento.nota_fiscal.numero;
+ALTER SEQUENCE nota_fiscal_numero_seq OWNED BY nota_fiscal.numero;
 
-CREATE TABLE faturamento.nota_fiscal_item (
+CREATE TABLE nota_fiscal_item (
     id                BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-    nota_id           BIGINT NOT NULL REFERENCES faturamento.nota_fiscal(id) ON DELETE CASCADE,
+    nota_id           BIGINT NOT NULL REFERENCES nota_fiscal(id) ON DELETE CASCADE,
     produto_codigo    VARCHAR(50)  NOT NULL, -- referência lógica, SEM FK para o schema estoque
     produto_descricao VARCHAR(200) NOT NULL, -- snapshot no momento da criação
     quantidade        INTEGER NOT NULL,
@@ -83,9 +117,15 @@ CREATE TABLE faturamento.nota_fiscal_item (
     CONSTRAINT ck_item_quantidade_positiva CHECK (quantidade > 0)
 );
 
-CREATE INDEX idx_item_nota_id ON faturamento.nota_fiscal_item (nota_id);
-CREATE INDEX idx_nota_status ON faturamento.nota_fiscal (status);
+CREATE INDEX idx_item_nota_id ON nota_fiscal_item (nota_id);
+CREATE INDEX idx_nota_status ON nota_fiscal (status);
 ```
+
+O `nextval` da sequência também é não qualificado. O Postgres resolve esse nome
+no momento do `CREATE TABLE` e guarda no `DEFAULT` uma referência direta ao
+objeto (`regclass`), então a sequência amarrada à coluna é sempre a criada
+segundos antes pela mesma migration, no mesmo schema — em produção ou no schema
+de teste, conforme o `SET LOCAL search_path` daquela transação.
 
 Notas de design:
 - `numero` usa uma `SEQUENCE` explícita — a geração é responsabilidade do
@@ -326,13 +366,15 @@ O que é **repetível**: timeout, erro de conexão, `502`/`503`/`504`
 `404 PRODUTO_NAO_ENCONTRADO`, `409 IDEMPOTENCY_KEY_CONFLITO` — o resultado não
 muda com retry, repetir só atrasa o feedback.
 
-Implementação sugerida: `context.WithTimeout` por tentativa, retry com jitter
-(biblioteca leve como `sethvargo/go-retry` ou implementação própria — decisão
-a registrar no detalhamento técnico) e circuit breaker simples (contagem de
-falhas em memória, mutex-protegida — `sony/gobreaker` como alternativa). O
-timeout do handler HTTP de `/notas/{id}/imprimir` deve ser maior que o tempo
-total do cliente de estoque (ex.: 5s) para nunca cortar a resposta no meio de
-um retry.
+Decisão de implementação (tomada aqui, registrada no detalhamento técnico):
+`context.WithTimeout` por tentativa, retry com jitter e circuit breaker
+**escritos à mão** em `internal/estoqueclient/{retry,circuitbreaker}.go`, em
+vez de `sethvargo/go-retry` e `sony/gobreaker`. As duas peças são pequenas o
+bastante para não pagarem uma dependência externa, e manter o `go.mod` com uma
+única dependência direta (`pgx`) é um resultado que vale explicar numa
+entrevista. O `WriteTimeout` do servidor HTTP de faturamento é folgadamente
+maior que o tempo total do cliente de estoque, para nunca cortar a resposta no
+meio de um retry.
 
 ---
 
@@ -344,19 +386,19 @@ um retry.
 Korp_Teste_GustavoPinto/
 ├── CLAUDE.md
 ├── docker-compose.yml
-├── .env.example
+├── .env.example                 # só variáveis que o compose realmente lê
 ├── .gitignore
-├── README.md
+├── README.md                    # como subir, testar e demonstrar a falha
+├── DETALHAMENTO_TECNICO.md      # respostas ao checklist do enunciado
 ├── .github/
 │   └── workflows/
 │       └── ci.yml
 ├── docs/
 │   └── plano-tecnico.md
 ├── frontend/
-├── services/
-│   ├── estoque/
-│   └── faturamento/
-└── .claude/agents/...
+└── services/
+    ├── estoque/
+    └── faturamento/
 ```
 
 ### 5.2 Serviço Go (padrão idêntico para `estoque` e `faturamento`)
@@ -369,27 +411,35 @@ services/estoque/
 ├── cmd/
 │   └── api/
 │       └── main.go          # bootstrap: config, conexão DB, router, graceful shutdown
+├── .dockerignore             # mantém testes e fixtures fora do contexto de build
 ├── internal/
-│   ├── config/               # leitura de env vars
 │   ├── httpserver/
 │   │   └── handler/          # handlers HTTP
 │   ├── domain/                # entidades e regras de negócio puras
 │   │   ├── produto.go
 │   │   └── erros.go           # ErrSaldoInsuficiente, ErrProdutoNaoEncontrado
 │   ├── service/                 # orquestração de caso de uso
-│   ├── repository/               # implementação com database/sql ou pgx
+│   ├── repository/               # implementação com pgx
 │   │   ├── produto_repository.go
 │   │   └── idempotencia_repository.go
-│   └── apierror/                  # tradução domínio → formato único de erro HTTP
+│   ├── migrate/                   # runner de migrations próprio (seção 1.0)
+│   ├── testdb/                     # setup do banco de teste; nada em produção importa
+│   └── apierror/                    # tradução domínio → formato único de erro HTTP
 └── migrations/
-    ├── 0001_create_produto.sql
-    └── 0002_create_idempotencia_baixa.sql
+    ├── embed.go                      # go:embed *.sql
+    ├── 0001_create_schema_e_produto.sql
+    ├── 0002_create_idempotencia_baixa.sql
+    └── 0003_seed_produtos.sql
 ```
+
+Um `internal/config/` chegou a ser previsto, mas não se justificou: cada
+serviço lê meia dúzia de variáveis de ambiente direto em `cmd/api/main.go`, e
+um pacote para isso seria indireção sem ganho.
 
 `services/faturamento` segue a mesma estrutura, trocando `produto` por
 `nota_fiscal`/`nota_fiscal_item`, e adicionando `internal/estoqueclient/`
-(cliente resiliente da seção 4) e `internal/iaclient/` (integração da seção
-7). Camadas: **handler → service/domain → repository** — o domínio não importa
+(cliente resiliente da seção 4) e `internal/ia/` (integração da seção 7).
+Camadas: **handler → service/domain → repository** — o domínio não importa
 `net/http` nem driver de banco.
 
 ### 5.3 Frontend Angular
@@ -398,27 +448,40 @@ services/estoque/
 frontend/
 ├── angular.json
 ├── package.json
+├── Dockerfile                                   # build + nginx que serve a SPA
+├── nginx.conf                                   # proxy reverso /api/* (produção)
+├── proxy.conf.json                              # mesmo proxy para `ng serve`
+├── .dockerignore
 ├── src/
+│   ├── styles.scss                              # tema Material 3 via mat.theme()
 │   └── app/
 │       ├── core/
 │       │   ├── models/                        # Produto, NotaFiscal, ErroApi
 │       │   ├── services/
-│       │   │   ├── produto.service.ts
-│       │   │   ├── nota-fiscal.service.ts
-│       │   │   └── ia.service.ts
+│       │   │   ├── produto.service.ts          # base /api/estoque
+│       │   │   └── nota-fiscal.service.ts      # base /api/faturamento, inclui /notas/interpretar
 │       │   └── interceptors/
 │       │       └── erro-http.interceptor.ts    # traduz ErroApi em mensagem uniforme
 │       ├── produtos/
 │       │   ├── produto-lista/
 │       │   └── produto-form/
-│       ├── notas-fiscais/
-│       │   ├── nota-lista/
-│       │   ├── nota-form/
-│       │   │   └── ia-sugestao/                 # entrada em linguagem natural
-│       │   └── nota-detalhe/
-│       │       └── botao-imprimir/               # estados idle/processando/sucesso/erro
-│       └── shared/
+│       └── notas-fiscais/
+│           ├── nota-lista/
+│           ├── nota-form/
+│           │   └── ia-sugestao/                 # entrada em linguagem natural
+│           └── nota-detalhe/
+│               └── botao-imprimir/               # estados idle/processando/sucesso/erro
 ```
+
+Duas simplificações em relação ao previsto: a chamada de IA não ganhou um
+`ia.service.ts` próprio — `/notas/interpretar` é um endpoint do faturamento
+como qualquer outro, então mora em `nota-fiscal.service.ts`; e um diretório
+`shared/` nunca foi criado, porque nenhum componente chegou a ser reaproveitado
+entre as duas áreas de funcionalidade.
+
+Os dois serviços HTTP apontam para caminhos **relativos** (`/api/estoque`,
+`/api/faturamento`): nenhum host de backend entra no bundle, e é o proxy
+reverso (seção 8) que resolve o destino em cada ambiente.
 
 ---
 
@@ -483,9 +546,9 @@ itens, status e o `botao-imprimir`.
 }
 ```
 
-Fluxo: o modelo recebe o texto e devolve **saída estruturada** (carregar a
-skill `claude-api` na implementação para o formato correto de tool
-use/saída estruturada). O faturamento valida cada item contra o catálogo real
+Fluxo: o modelo recebe o texto e devolve **saída estruturada** (via tool
+use / structured output do provedor). O faturamento valida cada item contra o
+catálogo real
 (`GET /produtos`) — produto sugerido que não existe vai para
 `itensNaoReconhecidos`, nunca é inventado como novo produto. A resposta
 preenche o `FormArray` no Angular; o usuário revisa e só então clica "Salvar
@@ -501,77 +564,55 @@ qualquer escrita de saldo.
 
 ---
 
-## 8. `docker-compose.yml` conceitual
+## 8. Orquestração via `docker-compose.yml`
 
-```yaml
-services:
-  postgres:
-    image: postgres:16
-    environment:
-      POSTGRES_USER: ${POSTGRES_USER}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
-      POSTGRES_DB: ${POSTGRES_DB}
-    volumes:
-      - pgdata:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER}"]
-      interval: 5s
-      timeout: 3s
-      retries: 10
+O arquivo real é [`docker-compose.yml`](../docker-compose.yml) na raiz; esta
+seção registra as decisões por trás dele, não uma segunda cópia a manter em
+sincronia.
 
-  estoque:
-    build: ./services/estoque
-    depends_on:
-      postgres:
-        condition: service_healthy
-    environment:
-      DATABASE_URL: postgres://.../${POSTGRES_DB}?search_path=estoque
-      PORT: 8081
-    ports: ["8081:8081"]
-    healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://localhost:8081/health"]
-      interval: 5s
-      timeout: 3s
-      retries: 5
-    # migrations rodam no entrypoint do container, antes de subir o servidor HTTP
+**Quatro serviços:** `postgres` (volume `pgdata` nomeado, para o saldo
+sobreviver a `stop`/`start`), `estoque`, `faturamento` e `frontend`.
 
-  faturamento:
-    build: ./services/faturamento
-    depends_on:
-      postgres:
-        condition: service_healthy
-      estoque:
-        condition: service_healthy
-    environment:
-      DATABASE_URL: postgres://.../${POSTGRES_DB}?search_path=faturamento
-      ESTOQUE_BASE_URL: http://estoque:8081
-      IA_API_KEY: ${IA_API_KEY}
-      PORT: 8082
-    ports: ["8082:8082"]
-    healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://localhost:8082/health"]
-      interval: 5s
-      timeout: 3s
-      retries: 5
+**Ordem de subida por saúde, não por sleep.** `postgres` tem healthcheck
+`pg_isready`; `estoque` e `faturamento` herdam o `HEALTHCHECK` declarado em
+cada Dockerfile (um `wget` no `/health`, que por sua vez faz ping no pool de
+conexões). `faturamento` declara
+`depends_on: {postgres: service_healthy, estoque: service_healthy}`. O
+healthcheck **não é repetido no compose**: duplicá-lo criaria duas definições
+para manter em sincronia, e a do compose venceria em silêncio a da imagem.
 
-  frontend:
-    build: ./frontend
-    depends_on: [faturamento, estoque]
-    ports: ["4200:80"]
+**Configuração — só variável que produz efeito.** O `.env.example` declara
+exclusivamente o que o compose lê: `POSTGRES_USER`/`PASSWORD`/`DB` (única fonte
+de verdade da conexão, a partir da qual as duas `DATABASE_URL` são montadas
+inline, com `search_path` diferente por serviço), `IA_PROVIDER`/`IA_API_KEY`, e
+as três portas de host.
 
-volumes:
-  pgdata:
-```
+**As portas de host são só o lado esquerdo do mapeamento.** `ESTOQUE_PORT`,
+`FATURAMENTO_PORT` e `FRONTEND_PORT` existem para o caso de a porta já estar
+ocupada na máquina de quem avalia; dentro da rede do compose os serviços ficam
+fixos em 8081/8082/80. Amarrar a porta interna a essas variáveis seria uma
+armadilha silenciosa: a variável mudaria a porta do app, mas não o `EXPOSE`, o
+`HEALTHCHECK` do Dockerfile nem o `proxy_pass` do nginx — o container nunca
+ficaria `healthy` e o `faturamento`, preso ao `service_healthy`, jamais subiria.
 
-`depends_on: condition: service_healthy` garante ordem de subida sem sleep
-manual — isso vale só para a **subida inicial**. Depois de tudo no ar,
-`docker compose stop estoque` derruba apenas aquele container; `faturamento` e
-`frontend` continuam respondendo. Roteiro de vídeo: `stop estoque` → tentar
-imprimir → erro claro, nota Aberta → `start estoque` (sem recriar volume,
-saldo intacto) → imprimir de novo → sucesso, saldo debitado uma única vez.
-Migrations e seed rodam automaticamente no entrypoint de cada serviço Go, para
-`docker compose up` funcionar em clone limpo. Toda configuração sensível via
-`.env`, com `.env.example` versionado.
+**Migrations e seed rodam no start de cada serviço Go**, antes do servidor HTTP
+aceitar tráfego, para `docker compose up` funcionar em clone limpo sem passo
+manual.
+
+**Cenário de falha.** `depends_on` ordena apenas a **subida inicial**. Com tudo
+no ar, `docker compose stop estoque` derruba só aquele container; `faturamento`
+e `frontend` continuam respondendo. Roteiro do vídeo: `stop estoque` → tentar
+imprimir → `503 ESTOQUE_INDISPONIVEL`, nota permanece Aberta → `start estoque`
+(sem recriar volume, saldo intacto) → imprimir de novo → sucesso, saldo
+debitado uma única vez. As portas 8081/8082 seguem publicadas justamente para
+permitir esse roteiro com `curl` direto no serviço.
+
+**Frontend com proxy reverso.** O container do frontend serve o bundle
+estático e faz proxy de `/api/estoque/` e `/api/faturamento/` para os serviços
+internos (`frontend/nginx.conf`). A SPA fala apenas com a própria origem: não
+há requisição cross-origin, nem preflight, nem cabeçalho CORS em nenhum serviço
+Go, nem host de backend gravado no bundle. Em desenvolvimento,
+`frontend/proxy.conf.json` dá o mesmo comportamento ao `ng serve`.
 
 ---
 
@@ -631,9 +672,13 @@ Prática transversal a todas as fases acima — não é um passo do fim.
 - **CI/CD via GitHub Actions desde o início do código.** Workflow
   `.github/workflows/ci.yml` rodando a cada push e pull request, com jobs
   paralelos:
-  - `estoque`: `go build ./...`, `go vet ./...`, `go test ./...`
-  - `faturamento`: idem
-  - `frontend`: `npm ci`, `ng lint`, `ng test --watch=false`
+  - `estoque`: `go build ./...`, `go vet ./...`, `go test ./... -p 1` contra um
+    Postgres de serviço, com `TEST_DATABASE_URL_ESTOQUE` apontando para
+    `search_path=estoque_test` — sem essa variável os testes de integração
+    seriam pulados e o job ficaria verde sem provar nada
+  - `faturamento`: idem, com `TEST_DATABASE_URL_FATURAMENTO` e
+    `search_path=faturamento_test`
+  - `frontend`: `npm ci`, `ng lint`, `ng build`, `ng test --watch=false`
 
   O pipeline fica verde desde os primeiros commits — sinal de confiabilidade
   contínua, não um selo colado no fim para a entrega.
@@ -644,16 +689,23 @@ Prática transversal a todas as fases acima — não é um passo do fim.
 
 ## Arquivos críticos de implementação
 
-- `services/estoque/migrations/0001_create_produto.sql` e
+- `services/estoque/migrations/0001_create_schema_e_produto.sql` e
   `0002_create_idempotencia_baixa.sql` — ancoram a invariante de saldo e a
   idempotência.
+- `services/*/internal/migrate/migrate.go` — runner de migrations e resolução
+  de schema pelo `search_path` (seção 1.0); é o que dá isolamento real de teste.
 - `services/faturamento/internal/estoqueclient/` — cliente HTTP resiliente
   (seção 4).
-- `services/faturamento/internal/service/imprimir_nota.go` (ou equivalente) —
-  orquestra o fluxo da seção 3, coração do requisito avaliado.
+- `services/estoque/internal/service/baixa_service.go` — validação de entrada,
+  débito atômico e replay idempotente, do lado do estoque.
+- `services/faturamento/internal/service/imprimir_service.go` — orquestra o
+  fluxo da seção 3, coração do requisito avaliado.
 - `services/*/internal/apierror/` — tradução única para o formato de erro da
   seção 2.1.
 - `frontend/src/app/notas-fiscais/nota-detalhe/botao-imprimir/` — máquina de
   estados da seção 6.
+- `frontend/nginx.conf` — proxy reverso que põe SPA e APIs na mesma origem
+  (seção 8).
 - `docker-compose.yml` — viabiliza o cenário de falha ao vivo do vídeo.
-- `.github/workflows/ci.yml` — pipeline de testes ativo desde o início.
+- `.github/workflows/ci.yml` — pipeline de testes ativo desde o início, com as
+  variáveis `TEST_DATABASE_URL_*` definidas para a integração rodar de fato.

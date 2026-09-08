@@ -5,16 +5,39 @@ afirmação abaixo aponta para um arquivo real do repositório.
 
 ## Ciclos de vida do Angular utilizados
 
-- **`ngOnInit`** — usado em todos os componentes que precisam carregar dados
-  ao entrar em tela: `produto-lista.ts`, `produto-form.ts` (carrega o produto
-  existente quando a rota é de edição), `nota-lista.ts` e `nota-detalhe.ts`
-  (carrega a nota pelo id da rota).
-- Nenhum componente precisou de `ngOnDestroy` manual: a única inscrição RxJS
-  fora de fluxo declarativo de template (o autocomplete de produto em
-  `notas-fiscais/nota-form/nota-form.ts`) usa o operador
-  `takeUntilDestroyed()` (`@angular/core/rxjs-interop`), que encerra a
-  inscrição automaticamente quando o componente é destruído — mais idiomático
-  no Angular atual do que implementar `OnDestroy` à mão.
+- **`ngOnInit`** — usado nos cinco componentes de tela: `produto-lista.ts` e
+  `nota-lista.ts` (carregam a listagem ao entrar), `produto-form.ts` (carrega o
+  produto existente quando a rota é de edição), `nota-detalhe.ts` (carrega a
+  nota pelo id da rota) e `nota-form.ts` (inicializa o array de sugestões do
+  autocomplete alinhado ao `FormArray`).
+- **Nenhum `ngOnDestroy`** — a decisão é deliberada e vale a pena ser explícita,
+  porque as dez inscrições RxJS do projeto se dividem em dois casos distintos:
+  - **Um fluxo de vida longa**, o `valueChanges` do autocomplete de produto em
+    `nota-form.ts`. É um `Subject` que nunca completa sozinho: sem cleanup, a
+    inscrição sobreviveria ao componente. Esse é o único que precisa de
+    encerramento explícito e o único que usa
+    `takeUntilDestroyed(this.destroyRef)` (`@angular/core/rxjs-interop`), com o
+    `DestroyRef` injetado no campo da classe — a linha do `FormArray` também é
+    criada a partir de handlers de evento (adicionar item, aceitar sugestão da
+    IA), fora de contexto de injeção, onde `takeUntilDestroyed()` sem argumento
+    lançaria `NG0203`.
+  - **Nove inscrições de vida curta**, todas em observables do `HttpClient`
+    (`produto-lista.ts` ×2, `produto-form.ts` ×2, `nota-lista.ts`,
+    `nota-detalhe.ts`, `nota-form.ts` no submit, `ia-sugestao.ts` e
+    `botao-imprimir.ts`). Um observable do `HttpClient` emite no máximo uma vez
+    e completa, o que descarta a inscrição por conta própria — não há
+    vazamento de subscription a prevenir, e um `ngOnDestroy` só para
+    `unsubscribe` seria cerimônia sem efeito.
+
+  Vale registrar o limite honesto dessa escolha: uma inscrição de vida curta
+  não é cancelada quando o componente é destruído no meio da requisição — o
+  callback ainda roda contra um componente morto. É inofensivo aqui porque
+  todos esses callbacks apenas escrevem em `signal`s do próprio componente ou
+  abrem um `MatSnackBar`, nunca tocam o DOM diretamente. Se algum passasse a
+  fazer navegação ou efeito colateral externo, o cancelamento deixaria de ser
+  opcional. Os dois fluxos com indicador de progresso (`botao-imprimir.ts` e
+  `ia-sugestao.ts`) já usam `finalize()`, que desliga o estado de
+  processamento inclusive no cancelamento.
 - `ngOnChanges` não foi necessário: nenhum componente depende de reagir a
   mudança de `@Input()` depois da criação (os dados de edição chegam uma vez,
   via parâmetro de rota, resolvidos em `ngOnInit`).
@@ -36,6 +59,8 @@ Sim, usada em pontos concretos, não decorativos:
 - **`finalize`** — usado no botão de impressão (`botao-imprimir.ts`) e no
   bloco de sugestão por IA (`ia-sugestao.ts`) para garantir que o indicador de
   processamento é desligado sempre, tanto no sucesso quanto no erro.
+- **`takeUntilDestroyed`** — encerra o único fluxo de vida longa da aplicação
+  junto com o componente (ver seção anterior).
 - O `HttpInterceptorFn` em si é a composição de um `Observable` (`next(req)`)
   com esses operadores — é o mecanismo central de tratamento de erro de toda
   a aplicação.
@@ -48,7 +73,7 @@ lógica de negócio:
 | Biblioteca | Finalidade |
 | --- | --- |
 | `@angular/forms` | Formulários reativos (`ReactiveFormsModule`, `FormArray` para múltiplos itens de nota) |
-| `@angular/router` | Navegação entre telas, roteamento com `loadComponent` (lazy) |
+| `@angular/router` | Navegação entre telas, roteamento 100% `loadComponent` (lazy) em `app.routes.ts` |
 | `@angular/cdk` | Base do Angular Material (overlay, a11y) |
 | `rxjs` | Composição assíncrona — ver seção acima |
 
@@ -59,13 +84,23 @@ padrão do `ng new` nesta versão do Angular CLI, no lugar de Karma),
 
 ## Bibliotecas de componentes visuais
 
-**Angular Material** (`@angular/material`), tema pré-construído `azure-blue`
-com tipografia e animações habilitadas
-(`provideAnimationsAsync()` em `app.config.ts`). Usado para: tabelas
-(`mat-table`), formulários (`mat-form-field`, `mat-input`, `mat-select`),
-autocomplete (`mat-autocomplete`), indicador de processamento
-(`mat-progress-spinner`), feedback (`MatSnackBar`) e status da nota como
-`mat-chip` colorido.
+**Angular Material** (`@angular/material`), com tema **customizado via
+Sass**, não um dos temas pré-construídos: `angular.json` carrega apenas
+`src/styles.scss`, que aplica o mixin `mat.theme()` do Material 3 sobre
+`mat.$azure-palette` (primária) e `mat.$blue-palette` (terciária), com
+tipografia Roboto e densidade 0. As animações vêm de `provideAnimationsAsync()`
+em `app.config.ts`. O mesmo arquivo define, por variáveis CSS do Material, as
+cores dos snackbars de erro de negócio, erro de sistema e sucesso — a
+diferenciação visual do contrato único de erro.
+
+Componentes usados: tabelas (`mat-table`), formulários (`mat-form-field`,
+`matInput`, `mat-error`), autocomplete de produto (`mat-autocomplete` +
+`mat-option` — não há `mat-select` no projeto: a seleção é sempre por busca
+com filtro), botões (`mat-button`, `mat-flat-button`, `mat-stroked-button`,
+`mat-icon-button`), ícones (`mat-icon`), barra de navegação (`mat-toolbar`),
+indicador de processamento (`mat-spinner`), feedback (`MatSnackBar`),
+`matTooltip` explicando por que o botão de impressão está desabilitado, e o
+status da nota como `mat-chip` colorido.
 
 ## Gerenciamento de dependências em Go
 
@@ -78,11 +113,11 @@ github.com/jackc/pgx/v5 v5.11.0
 ```
 
 As demais entradas do `go.mod` (`pgpassfile`, `pgservicefile`, `puddle/v2`,
-`golang.org/x/sync`, `golang.org/x/text`) são transitivas do próprio `pgx`,
-não escolhas do projeto. Deliberadamente não foram adicionadas bibliotecas de
-migration (`golang-migrate`), retry ou circuit breaker (`sony/gobreaker`,
-`sethvargo/go-retry`) — essas três peças foram implementadas à mão
-(`internal/migrate`, `internal/estoqueclient/retry.go`,
+`golang.org/x/sync`, `golang.org/x/text`) estão marcadas `// indirect`: são
+transitivas do próprio `pgx`, não escolhas do projeto. Deliberadamente não
+foram adicionadas bibliotecas de migration (`golang-migrate`), retry ou
+circuit breaker (`sony/gobreaker`, `sethvargo/go-retry`) — essas três peças
+foram implementadas à mão (`internal/migrate`, `internal/estoqueclient/retry.go`,
 `internal/estoqueclient/circuitbreaker.go` no faturamento) por serem simples
 o bastante para não justificar uma dependência externa.
 
@@ -92,8 +127,9 @@ o bastante para não justificar uma dependência externa.
 biblioteca padrão, com `http.ServeMux` (Go 1.22+, que já roteia por método
 HTTP e path, ex. `mux.HandleFunc("POST /produtos/baixa", ...)` em
 `internal/httpserver/router.go`). Decisão deliberada: o volume de rotas de
-cada serviço (5–6 endpoints) não justifica Gin, Echo ou Chi, e evitar um
-framework mantém o `go.mod` com a única dependência direta citada acima.
+cada serviço (meia dúzia de endpoints, incluindo `/health`) não justifica Gin,
+Echo ou Chi, e evitar um framework mantém o `go.mod` com a única dependência
+direta citada acima.
 
 ## Tratamento de erros e exceções no backend
 
@@ -121,10 +157,43 @@ Estratégia única, replicada nos dois serviços:
    de novo. É essa distinção que permite ao cliente resiliente do faturamento
    (`internal/estoqueclient`) decidir se repete uma chamada ou desiste na
    primeira resposta.
-5. **Atomicidade via transação** — o endpoint de baixa do estoque
+5. **Erro inesperado tem uma resposta só, e nunca some** — o caso `default` do
+   mapeamento é idêntico nos dois serviços: `500` com
+   `codigo: "ERRO_INTERNO"`, a mesma mensagem
+   ("Ocorreu um erro inesperado. Tente novamente em instantes."),
+   `tipo: "sistema"` e `repetivel: true`. Idêntico de propósito: o frontend
+   trata o mesmo `codigo` com o mesmo significado, venha de qual serviço vier.
+   Como o corpo nunca carrega a causa (o contrato manda mensagem pronta para o
+   usuário, nunca stack trace), `EscreverErro` **loga o erro original** sempre
+   que o status é 500 — sem isso um 500 seria indebugável, com o erro
+   descartado silenciosamente.
+6. **Validação de entrada antes do banco** — `POST /produtos/baixa` rejeita
+   com `422 VALIDACAO` lista de itens vazia, código em branco e quantidade
+   `<= 0` (`internal/service/baixa_service.go`). Não é validação decorativa:
+   uma quantidade negativa passaria ilesa pela checagem de saldo insuficiente
+   (`saldoAnterior < quantidade` nunca é verdadeira para negativos) e o débito
+   acabaria *creditando* saldo — algo que o `CHECK (saldo >= 0)` do banco não
+   barra, porque o valor sobe.
+7. **Atomicidade via transação** — o endpoint de baixa do estoque
    (`internal/service/baixa_service.go`) valida saldo de todos os itens e só
    então debita, dentro de uma única transação Postgres — erro de negócio em
    qualquer item provoca rollback completo, nunca débito parcial.
+
+## Comunicação frontend ↔ API (e o que aconteceu com o CORS)
+
+Não há CORS no sistema porque **não há requisição cross-origin**. A SPA usa
+apenas caminhos relativos (`/api/estoque`, `/api/faturamento` — ver
+`core/services/*.service.ts`), e o nginx que serve o bundle faz proxy reverso
+para os serviços na rede interna do compose (`frontend/nginx.conf`); em
+desenvolvimento, `ng serve` faz o equivalente via `frontend/proxy.conf.json`,
+registrado em `angular.json`.
+
+A alternativa seria emitir cabeçalhos `Access-Control-Allow-*` nos dois
+serviços Go. Proxy foi preferido por três razões concretas: (a) nenhum host de
+backend fica gravado no bundle de produção — o mesmo artefato roda em qualquer
+ambiente; (b) os serviços Go não ganham conhecimento de origem de navegador,
+que é preocupação de borda, não de domínio; (c) some a categoria inteira de
+falha "funciona no `curl`, quebra no navegador", inclusive preflight `OPTIONS`.
 
 ## LINQ
 
@@ -134,10 +203,25 @@ condicionava esse item a uma implementação em C#; como a escolha de stack
 recaiu sobre Go (também permitido pelo enunciado), este item é registrado
 aqui como não aplicável em vez de omitido.
 
+## Isolamento de schema e migrations
+
+Cada serviço é dono exclusivo de um schema Postgres e **nada na sua SQL é
+qualificado com o nome do schema**. O runner próprio (`internal/migrate`)
+deriva o schema alvo do `search_path` da conexão, cria-o se preciso e aplica
+cada migration dentro de uma transação com `SET LOCAL search_path`. A tabela de
+controle `schema_migrations` vive dentro do schema do serviço, não em `public`.
+
+Isso não é purismo: é o que permite a suíte de integração rodar num schema
+descartável (`estoque_test`, `faturamento_test`) derivado do próprio DSN, sem
+tocar nos dados da demo nem numa tabela de controle compartilhada com o outro
+microsserviço. A suíte recusa rodar se o `search_path` não terminar em
+`_test`, já que ela derruba o schema inteiro antes de cada execução — ver
+[`README.md`](README.md#rodar-os-testes).
+
 ## Requisitos obrigatórios — onde estão implementados
 
 - **Arquitetura de microsserviços** — `services/estoque` e
-  `services/faturamento`, bancos/schemas separados, comunicação só por HTTP.
+  `services/faturamento`, schemas separados, comunicação só por HTTP.
 - **Tratamento de falhas** — `services/faturamento/internal/service/imprimir_service.go`
   (fluxo completo) + `internal/estoqueclient/{retry,circuitbreaker}.go`.
   Roteiro de demonstração em [`README.md`](README.md#testar-o-cenário-de-falha-requisito-obrigatório).
@@ -147,7 +231,7 @@ aqui como não aplicável em vez de omitido.
 ## Requisitos opcionais escolhidos
 
 - **Idempotência** — chave determinística `impressao-nota-{id}`, tabela
-  `estoque.idempotencia_baixa`, replay exato em chave repetida
+  `idempotencia_baixa` no schema do estoque, replay exato em chave repetida
   (`services/estoque/internal/service/baixa_service.go`).
 - **Inteligência Artificial** — `POST /notas/interpretar`, mock determinístico
   documentado como tal em `services/faturamento/internal/ia/mock_interpretador.go`,

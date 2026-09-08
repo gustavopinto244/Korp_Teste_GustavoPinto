@@ -1,0 +1,24 @@
+# O contexto de build só precisa do que entra no binário: go.mod/go.sum,
+# cmd/, internal/ (sem testes) e migrations/. Tudo abaixo é peso morto no
+# `COPY . .` — e, pior, invalida o cache da camada de build a cada edição de
+# teste, forçando um `go build` completo por causa de um arquivo que o
+# binário nunca vê.
+
+# Testes e seus fixtures: `go build ./cmd/api` não os compila.
+*_test.go
+**/testdata/
+internal/testdb/
+
+# Artefatos locais e ambiente
+bin/
+vendor/
+*.exe
+*.log
+.env
+.env.*
+
+# Metadados de repositório e editor
+.git
+.gitignore
+.vscode
+.idea

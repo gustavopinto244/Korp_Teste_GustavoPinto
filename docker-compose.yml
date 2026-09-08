@@ -15,6 +15,10 @@ services:
       timeout: 3s
       retries: 10
 
+  # Os healthchecks de estoque, faturamento e frontend vêm do HEALTHCHECK de
+  # cada Dockerfile, junto com a porta que eles consultam. Não são repetidos
+  # aqui de propósito: duplicá-los criaria duas definições para manter em
+  # sincronia, e a do compose venceria silenciosamente a da imagem.
   estoque:
     build: ./services/estoque
     depends_on:
@@ -22,13 +26,11 @@ services:
         condition: service_healthy
     environment:
       DATABASE_URL: postgres://${POSTGRES_USER:-korp}:${POSTGRES_PASSWORD:-korp}@postgres:5432/${POSTGRES_DB:-korp}?sslmode=disable&search_path=estoque
-      PORT: ${ESTOQUE_PORT:-8081}
+      # Porta interna fixa: EXPOSE, HEALTHCHECK e o proxy do nginx apontam
+      # todos para 8081. Só o lado host do mapeamento abaixo é configurável.
+      PORT: "8081"
     ports:
       - "${ESTOQUE_PORT:-8081}:8081"
-    healthcheck:
-      interval: 5s
-      timeout: 3s
-      retries: 5
 
   faturamento:
     build: ./services/faturamento
@@ -39,17 +41,19 @@ services:
         condition: service_healthy
     environment:
       DATABASE_URL: postgres://${POSTGRES_USER:-korp}:${POSTGRES_PASSWORD:-korp}@postgres:5432/${POSTGRES_DB:-korp}?sslmode=disable&search_path=faturamento
-      PORT: ${FATURAMENTO_PORT:-8082}
+      PORT: "8082"
+      # Endereço interno do estoque na rede do compose. Não é configuração de
+      # ambiente, é topologia: mudá-lo sem mudar o nome do serviço acima só
+      # quebraria a resolução DNS.
       ESTOQUE_BASE_URL: http://estoque:8081
       IA_PROVIDER: ${IA_PROVIDER:-mock}
       IA_API_KEY: ${IA_API_KEY:-}
     ports:
       - "${FATURAMENTO_PORT:-8082}:8082"
-    healthcheck:
-      interval: 5s
-      timeout: 3s
-      retries: 5
 
+  # Serve a SPA e faz proxy reverso de /api/estoque e /api/faturamento para os
+  # serviços acima (ver frontend/nginx.conf): o navegador só fala com esta
+  # origem, então não há requisição cross-origin nem cabeçalho CORS no sistema.
   frontend:
     build: ./frontend
     depends_on:
