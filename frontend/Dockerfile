@@ -15,5 +15,8 @@ COPY nginx.conf /etc/nginx/conf.d/default.conf
 
 EXPOSE 80
 
+# 127.0.0.1 e não localhost: dentro do container "localhost" resolve também
+# para ::1, o wget do busybox tenta o IPv6 primeiro e o nginx escuta apenas
+# em IPv4 — o container ficava eternamente unhealthy servindo normalmente.
 HEALTHCHECK --interval=5s --timeout=3s --retries=5 \
-  CMD wget -qO- http://localhost:80/health || exit 1
+  CMD wget -qO- http://127.0.0.1:80/health || exit 1
