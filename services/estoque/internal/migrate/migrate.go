@@ -1,13 +1,19 @@
-// Package migrate implementa um runner de migrations simples e próprio,
-// sem depender de golang-migrate. As migrations são arquivos .sql embutidos
-// no binário via embed.FS e aplicadas em ordem alfabética, cada uma dentro
-// de uma transação, contra uma tabela de controle schema_migrations.
+// Package migrate implementa um runner de migrations simples e próprio, sem
+// depender de golang-migrate. As migrations são arquivos .sql embutidos no
+// binário via embed.FS e aplicadas em ordem alfabética, cada uma dentro de
+// uma transação, contra uma tabela de controle schema_migrations.
 //
-// Tudo — schema de negócio, tabela de controle e SQL das migrations — é
-// resolvido a partir do search_path da conexão. Nada é hardcodado no nome
-// "estoque". É isso que permite que a suíte de testes rode inteiramente
-// dentro de um schema próprio (ex.: "estoque_test"), sem tocar nos dados de
-// produção nem em objetos compartilhados com o outro microsserviço.
+// Tudo — objetos de negócio, tabela de controle e SQL das migrations — é
+// resolvido a partir do search_path da conexão. Nada é qualificado com um
+// nome de schema fixo no código, o que permite apontar a suíte de testes
+// para um schema descartável (sufixo _test) sem tocar no schema de produção
+// nem em objetos compartilhados com o outro microsserviço.
+//
+// Este arquivo é mantido idêntico ao internal/migrate/migrate.go do outro
+// microsserviço. Estoque e faturamento são módulos Go independentes e não
+// compartilham código, então a duplicação é deliberada; o que se evita é a
+// divergência. Ao alterar um, copie no outro — `diff` entre os dois deve
+// continuar vazio.
 package migrate
 
 import (
@@ -27,26 +33,50 @@ import (
 // .sql de migration. Veja cmd/api/main.go para o uso com go:embed.
 type FS = embed.FS
 
-// EsquemaAlvo devolve o schema em que este serviço opera, derivado do
-// search_path da conexão (o primeiro entrada utilizável). É o mesmo schema
-// em que as migrations criam as tabelas e em que vive a tabela de controle.
+// A tabela de controle mora dentro do schema do próprio serviço (%s é o
+// identificador já sanitizado do schema), e não em public: em public ela
+// seria compartilhada com o outro microsserviço, que aplica outro conjunto
+// de migrations.
+const criarTabelaControle = `
+CREATE TABLE IF NOT EXISTS %s.schema_migrations (
+    versao      TEXT PRIMARY KEY,
+    aplicado_em TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+`
+
+// Bancos criados antes de a tabela de controle mudar de lugar têm as versões
+// deste serviço registradas em public.schema_migrations. Copiá-las para a
+// nova tabela (somente as versões que este serviço conhece, nunca as do
+// outro serviço) é o que faz o boot continuar funcionando num banco que já
+// tem migrations aplicadas, em vez de tentar reaplicá-las sobre tabelas
+// existentes.
+const importarControleLegado = `
+INSERT INTO %s.schema_migrations (versao, aplicado_em)
+SELECT versao, aplicado_em FROM public.schema_migrations
+WHERE versao = ANY($1)
+ON CONFLICT (versao) DO NOTHING
+`
+
+// SchemaAlvo devolve o schema em que este serviço opera, lido do search_path
+// da própria conexão. É exportado porque a suíte de testes precisa do mesmo
+// nome para limpar o schema descartável antes de cada cenário — sem isso os
+// testes voltariam a apagar um schema de nome fixo.
 //
-// Exportado porque os testes de integração precisam saber qual schema
-// limpar — sem isso eles voltariam a hardcodar "estoque" e derrubariam o
-// schema de produção.
-func EsquemaAlvo(ctx context.Context, pool *pgxpool.Pool) (string, error) {
+// Usa SHOW search_path (e não current_schema()) porque o schema pode ainda
+// não existir no primeiro boot, caso em que current_schema() devolveria NULL.
+func SchemaAlvo(ctx context.Context, pool *pgxpool.Pool) (string, error) {
 	var searchPath string
-	if err := pool.QueryRow(ctx, "SELECT current_setting('search_path')").Scan(&searchPath); err != nil {
-		return "", fmt.Errorf("consultar search_path: %w", err)
+	if err := pool.QueryRow(ctx, "SHOW search_path").Scan(&searchPath); err != nil {
+		return "", fmt.Errorf("ler search_path da conexão: %w", err)
 	}
-	return primeiroEsquema(searchPath), nil
+	return primeiroSchema(searchPath), nil
 }
 
-// primeiroEsquema extrai o primeiro schema utilizável de um search_path
-// como `estoque`, `estoque_test, public` ou `"$user", public`. A entrada
-// especial "$user" é ignorada por não nomear um schema fixo; se nada
-// sobrar, o padrão do Postgres ("public") é usado.
-func primeiroEsquema(searchPath string) string {
+// primeiroSchema extrai o primeiro schema utilizável de um search_path como
+// `estoque`, `estoque_test, public` ou `"$user", public`. A entrada especial
+// "$user" é ignorada por não nomear um schema fixo; se nada sobrar, o padrão
+// do Postgres ("public") é usado.
+func primeiroSchema(searchPath string) string {
 	for _, parte := range strings.Split(searchPath, ",") {
 		nome := strings.Trim(strings.TrimSpace(parte), `"`)
 		if nome == "" || nome == "$user" {
@@ -62,27 +92,19 @@ func primeiroEsquema(searchPath string) string {
 // ainda não constam na tabela de controle. É seguro chamar mais de uma vez:
 // migrations já aplicadas são ignoradas (idempotente).
 func Aplicar(ctx context.Context, pool *pgxpool.Pool, migrationsFS fs.FS, dir string) error {
-	esquema, err := EsquemaAlvo(ctx, pool)
+	schema, err := SchemaAlvo(ctx, pool)
 	if err != nil {
 		return err
 	}
-	esquemaSQL := pgx.Identifier{esquema}.Sanitize()
+	schemaID := pgx.Identifier{schema}.Sanitize()
 
 	// O schema é criado aqui, e não numa migration, porque seu nome vem do
 	// search_path e não pode ser escrito num .sql estático.
-	if _, err := pool.Exec(ctx, "CREATE SCHEMA IF NOT EXISTS "+esquemaSQL); err != nil {
-		return fmt.Errorf("criar schema %s: %w", esquema, err)
+	if _, err := pool.Exec(ctx, "CREATE SCHEMA IF NOT EXISTS "+schemaID); err != nil {
+		return fmt.Errorf("criar schema %s: %w", schema, err)
 	}
-
-	// A tabela de controle vive dentro do schema do serviço. Antes ela era
-	// public.schema_migrations, compartilhada com o outro microsserviço —
-	// o que impedia qualquer isolamento real de teste.
-	if _, err := pool.Exec(ctx, `
-		CREATE TABLE IF NOT EXISTS `+esquemaSQL+`.schema_migrations (
-		    versao      TEXT PRIMARY KEY,
-		    aplicado_em TIMESTAMPTZ NOT NULL DEFAULT now()
-		)`); err != nil {
-		return fmt.Errorf("criar tabela %s.schema_migrations: %w", esquema, err)
+	if _, err := pool.Exec(ctx, fmt.Sprintf(criarTabelaControle, schemaID)); err != nil {
+		return fmt.Errorf("criar tabela %s.schema_migrations: %w", schema, err)
 	}
 
 	arquivos, err := listarMigrations(migrationsFS, dir)
@@ -90,11 +112,11 @@ func Aplicar(ctx context.Context, pool *pgxpool.Pool, migrationsFS fs.FS, dir st
 		return err
 	}
 
-	if err := adotarControleLegado(ctx, pool, esquema, esquemaSQL, arquivos); err != nil {
+	if err := adotarControleLegado(ctx, pool, schema, schemaID, arquivos); err != nil {
 		return fmt.Errorf("adotar controle de migrations legado: %w", err)
 	}
 
-	aplicadas, err := versoesAplicadas(ctx, pool, esquemaSQL)
+	aplicadas, err := versoesAplicadas(ctx, pool, schemaID)
 	if err != nil {
 		return fmt.Errorf("consultar versões aplicadas: %w", err)
 	}
@@ -109,7 +131,7 @@ func Aplicar(ctx context.Context, pool *pgxpool.Pool, migrationsFS fs.FS, dir st
 			return fmt.Errorf("ler migration %q: %w", nome, err)
 		}
 
-		if err := aplicarUma(ctx, pool, esquemaSQL, nome, string(conteudo)); err != nil {
+		if err := aplicarUma(ctx, pool, schemaID, nome, string(conteudo)); err != nil {
 			return fmt.Errorf("aplicar migration %q: %w", nome, err)
 		}
 	}
@@ -117,6 +139,9 @@ func Aplicar(ctx context.Context, pool *pgxpool.Pool, migrationsFS fs.FS, dir st
 	return nil
 }
 
+// listarMigrations devolve, em ordem alfabética, os nomes dos arquivos .sql
+// do diretório dir de migrationsFS. A ordem alfabética é a ordem de
+// aplicação — daí o prefixo numérico no nome de cada migration.
 func listarMigrations(migrationsFS fs.FS, dir string) ([]string, error) {
 	entradas, err := fs.ReadDir(migrationsFS, dir)
 	if err != nil {
@@ -134,8 +159,8 @@ func listarMigrations(migrationsFS fs.FS, dir string) ([]string, error) {
 	return arquivos, nil
 }
 
-// adotarControleLegado cobre a atualização de um banco que já rodou a
-// versão anterior deste runner, quando a tabela de controle era
+// adotarControleLegado cobre a atualização de um banco que já rodou a versão
+// anterior deste runner, quando a tabela de controle era
 // public.schema_migrations. Nesse banco o schema do serviço já tem as
 // tabelas, mas a nova tabela de controle nasceria vazia — e reaplicar a
 // primeira migration falharia com "relation ... already exists".
@@ -143,11 +168,16 @@ func listarMigrations(migrationsFS fs.FS, dir string) ([]string, error) {
 // A adoção só acontece quando o schema do serviço realmente já contém
 // objetos (prova de que aquelas migrations foram aplicadas nele), e importa
 // apenas as versões deste serviço, nunca as do outro — public.schema_migrations
-// era compartilhada.
-func adotarControleLegado(ctx context.Context, pool *pgxpool.Pool, esquema, esquemaSQL string, arquivos []string) error {
+// era compartilhada. A tabela legada nunca é apagada: ela pode ainda estar em
+// uso pelo outro serviço.
+func adotarControleLegado(ctx context.Context, pool *pgxpool.Pool, schema, schemaID string, arquivos []string) error {
+	if len(arquivos) == 0 {
+		return nil
+	}
+
 	var jaControlado bool
 	if err := pool.QueryRow(ctx,
-		"SELECT EXISTS (SELECT 1 FROM "+esquemaSQL+".schema_migrations)").Scan(&jaControlado); err != nil {
+		fmt.Sprintf("SELECT EXISTS (SELECT 1 FROM %s.schema_migrations)", schemaID)).Scan(&jaControlado); err != nil {
 		return err
 	}
 	if jaControlado {
@@ -163,32 +193,29 @@ func adotarControleLegado(ctx context.Context, pool *pgxpool.Pool, esquema, esqu
 		return nil
 	}
 
-	var objetosNoEsquema int
+	var objetosNoSchema int
 	if err := pool.QueryRow(ctx, `
 		SELECT count(*)
 		FROM information_schema.tables
 		WHERE table_schema = $1 AND table_name <> 'schema_migrations'`,
-		esquema,
-	).Scan(&objetosNoEsquema); err != nil {
+		schema,
+	).Scan(&objetosNoSchema); err != nil {
 		return err
 	}
-	if objetosNoEsquema == 0 {
+	if objetosNoSchema == 0 {
 		// Schema vazio: nada foi aplicado nele, então as versões da tabela
 		// legada pertencem a outro schema/serviço. Aplicar do zero.
 		return nil
 	}
 
-	_, err := pool.Exec(ctx, `
-		INSERT INTO `+esquemaSQL+`.schema_migrations (versao, aplicado_em)
-		SELECT versao, aplicado_em FROM public.schema_migrations WHERE versao = ANY($1)
-		ON CONFLICT (versao) DO NOTHING`,
-		arquivos,
-	)
+	_, err := pool.Exec(ctx, fmt.Sprintf(importarControleLegado, schemaID), arquivos)
 	return err
 }
 
-func versoesAplicadas(ctx context.Context, pool *pgxpool.Pool, esquemaSQL string) (map[string]bool, error) {
-	rows, err := pool.Query(ctx, "SELECT versao FROM "+esquemaSQL+".schema_migrations")
+// versoesAplicadas devolve o conjunto de migrations já registradas na tabela
+// de controle do schema.
+func versoesAplicadas(ctx context.Context, pool *pgxpool.Pool, schemaID string) (map[string]bool, error) {
+	rows, err := pool.Query(ctx, fmt.Sprintf("SELECT versao FROM %s.schema_migrations", schemaID))
 	if err != nil {
 		return nil, err
 	}
@@ -205,22 +232,28 @@ func versoesAplicadas(ctx context.Context, pool *pgxpool.Pool, esquemaSQL string
 	return resultado, rows.Err()
 }
 
-func aplicarUma(ctx context.Context, pool *pgxpool.Pool, esquemaSQL, nome, sqlConteudo string) error {
+// aplicarUma executa o SQL de uma migration e registra sua versão na tabela
+// de controle dentro da mesma transação: ou as duas coisas acontecem, ou
+// nenhuma.
+func aplicarUma(ctx context.Context, pool *pgxpool.Pool, schemaID, nome, sqlConteudo string) error {
 	tx, err := pool.Begin(ctx)
 	if err != nil {
 		return fmt.Errorf("iniciar transação: %w", err)
 	}
 	defer tx.Rollback(ctx) //nolint:errcheck
 
-	// SET LOCAL vale só até o fim desta transação e garante que a SQL sem
-	// qualificação de schema crie os objetos no schema alvo, mesmo que a
-	// conexão venha sem search_path configurado.
-	if _, err := tx.Exec(ctx, "SET LOCAL search_path TO "+esquemaSQL+"; "+sqlConteudo); err != nil {
+	// As migrations não qualificam nomes de objeto: quem decide onde elas
+	// criam as tabelas é este search_path, restrito à transação.
+	if _, err := tx.Exec(ctx, "SET LOCAL search_path TO "+schemaID); err != nil {
+		return fmt.Errorf("posicionar search_path em %s: %w", schemaID, err)
+	}
+
+	if _, err := tx.Exec(ctx, sqlConteudo); err != nil {
 		return fmt.Errorf("executar SQL: %w", err)
 	}
 
 	if _, err := tx.Exec(ctx,
-		"INSERT INTO "+esquemaSQL+".schema_migrations (versao) VALUES ($1)", nome); err != nil {
+		fmt.Sprintf("INSERT INTO %s.schema_migrations (versao) VALUES ($1)", schemaID), nome); err != nil {
 		return fmt.Errorf("registrar versão aplicada: %w", err)
 	}
 

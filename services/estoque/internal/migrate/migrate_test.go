@@ -66,14 +66,14 @@ func TestAplicar_EIdempotente(t *testing.T) {
 	}
 }
 
-// TestAplicar_UsaOEsquemaDoSearchPath prova o isolamento da suíte: as
+// TestAplicar_UsaOSchemaDoSearchPath prova o isolamento da suíte: as
 // migrations criam objetos no schema do search_path do DSN, e a tabela de
 // controle vive dentro dele — não em public.schema_migrations, que é
 // compartilhada com o serviço de faturamento.
-func TestAplicar_UsaOEsquemaDoSearchPath(t *testing.T) {
+func TestAplicar_UsaOSchemaDoSearchPath(t *testing.T) {
 	pool := testdb.AbrirPool(t)
 	ctx := context.Background()
-	esquema := testdb.Esquema(t, pool)
+	schema := testdb.Schema(t, pool)
 
 	for _, tabela := range []string{"produto", "idempotencia_baixa", "schema_migrations"} {
 		var existe bool
@@ -81,50 +81,50 @@ func TestAplicar_UsaOEsquemaDoSearchPath(t *testing.T) {
 			SELECT EXISTS (
 				SELECT 1 FROM information_schema.tables
 				WHERE table_schema = $1 AND table_name = $2
-			)`, esquema, tabela).Scan(&existe); err != nil {
-			t.Fatalf("consultar existência de %s.%s: %v", esquema, tabela, err)
+			)`, schema, tabela).Scan(&existe); err != nil {
+			t.Fatalf("consultar existência de %s.%s: %v", schema, tabela, err)
 		}
 		if !existe {
-			t.Fatalf("tabela %s.%s não foi criada no schema do search_path", esquema, tabela)
+			t.Fatalf("tabela %s.%s não foi criada no schema do search_path", schema, tabela)
 		}
 	}
 }
 
-// TestAplicar_NaoTocaEmOutrosEsquemas prova a consequência mais grave do
+// TestAplicar_NaoTocaEmOutrosSchemas prova a consequência mais grave do
 // defeito antigo: a suíte derrubava o schema "estoque" de produção mesmo
 // com search_path=estoque_test. Aqui um schema vizinho com dados é criado
 // antes da migração e precisa sobreviver intacto.
-func TestAplicar_NaoTocaEmOutrosEsquemas(t *testing.T) {
+func TestAplicar_NaoTocaEmOutrosSchemas(t *testing.T) {
 	pool := testdb.AbrirPool(t)
 	ctx := context.Background()
 
-	const esquemaVizinho = "estoque_producao_simulada"
+	const schemaVizinho = "estoque_producao_simulada"
 	t.Cleanup(func() {
-		_, _ = pool.Exec(context.Background(), "DROP SCHEMA IF EXISTS "+esquemaVizinho+" CASCADE")
+		_, _ = pool.Exec(context.Background(), "DROP SCHEMA IF EXISTS "+schemaVizinho+" CASCADE")
 	})
 
-	if _, err := pool.Exec(ctx, "DROP SCHEMA IF EXISTS "+esquemaVizinho+" CASCADE"); err != nil {
+	if _, err := pool.Exec(ctx, "DROP SCHEMA IF EXISTS "+schemaVizinho+" CASCADE"); err != nil {
 		t.Fatalf("preparar schema vizinho: %v", err)
 	}
-	if _, err := pool.Exec(ctx, "CREATE SCHEMA "+esquemaVizinho); err != nil {
+	if _, err := pool.Exec(ctx, "CREATE SCHEMA "+schemaVizinho); err != nil {
 		t.Fatalf("criar schema vizinho: %v", err)
 	}
-	if _, err := pool.Exec(ctx, "CREATE TABLE "+esquemaVizinho+".produto (id INT PRIMARY KEY)"); err != nil {
+	if _, err := pool.Exec(ctx, "CREATE TABLE "+schemaVizinho+".produto (id INT PRIMARY KEY)"); err != nil {
 		t.Fatalf("criar tabela no schema vizinho: %v", err)
 	}
-	if _, err := pool.Exec(ctx, "INSERT INTO "+esquemaVizinho+".produto (id) VALUES (1)"); err != nil {
+	if _, err := pool.Exec(ctx, "INSERT INTO "+schemaVizinho+".produto (id) VALUES (1)"); err != nil {
 		t.Fatalf("popular schema vizinho: %v", err)
 	}
 
 	// Uma rodada completa de setup de teste (drop do schema de teste +
 	// migrations) não pode alcançar o schema vizinho.
-	testdb.LimparEsquema(t, pool)
+	testdb.LimparSchema(t, pool)
 	if err := migrate.Aplicar(ctx, pool, migrations.FS, "."); err != nil {
 		t.Fatalf("aplicar migrations: %v", err)
 	}
 
 	var linhas int
-	if err := pool.QueryRow(ctx, "SELECT count(*) FROM "+esquemaVizinho+".produto").Scan(&linhas); err != nil {
+	if err := pool.QueryRow(ctx, "SELECT count(*) FROM "+schemaVizinho+".produto").Scan(&linhas); err != nil {
 		t.Fatalf("schema vizinho foi destruído pela suíte: %v", err)
 	}
 	if linhas != 1 {

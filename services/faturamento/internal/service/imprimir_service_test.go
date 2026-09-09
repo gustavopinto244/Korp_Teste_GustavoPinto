@@ -13,6 +13,7 @@ import (
 	"github.com/gustavopinto244/korp-teste-gustavopinto/services/faturamento/internal/estoqueclient"
 	"github.com/gustavopinto244/korp-teste-gustavopinto/services/faturamento/internal/repository"
 	"github.com/gustavopinto244/korp-teste-gustavopinto/services/faturamento/internal/service"
+	"github.com/gustavopinto244/korp-teste-gustavopinto/services/faturamento/internal/testdb"
 )
 
 func criarNotaDeTeste(t *testing.T, repo *repository.NotaRepository) domain.NotaFiscal {
@@ -27,7 +28,7 @@ func criarNotaDeTeste(t *testing.T, repo *repository.NotaRepository) domain.Nota
 }
 
 func TestImprimirService_CaminhoFeliz(t *testing.T) {
-	pool := poolDeTeste(t)
+	pool := testdb.AbrirPool(t)
 	repo := repository.NovoNotaRepository(pool)
 	nota := criarNotaDeTeste(t, repo)
 
@@ -62,7 +63,7 @@ func TestImprimirService_CaminhoFeliz(t *testing.T) {
 }
 
 func TestImprimirService_NotaJaFechada_NaoChamaEstoque(t *testing.T) {
-	pool := poolDeTeste(t)
+	pool := testdb.AbrirPool(t)
 	repo := repository.NovoNotaRepository(pool)
 	nota := criarNotaDeTeste(t, repo)
 
@@ -94,7 +95,7 @@ func TestImprimirService_NotaJaFechada_NaoChamaEstoque(t *testing.T) {
 }
 
 func TestImprimirService_EstoqueRespondeErroDeNegocio_NotaPermaneceAberta(t *testing.T) {
-	pool := poolDeTeste(t)
+	pool := testdb.AbrirPool(t)
 	repo := repository.NovoNotaRepository(pool)
 	nota := criarNotaDeTeste(t, repo)
 
@@ -131,7 +132,7 @@ func TestImprimirService_EstoqueRespondeErroDeNegocio_NotaPermaneceAberta(t *tes
 }
 
 func TestImprimirService_EstoqueIndisponivel_EsgotaRetriesENotaPermaneceAberta(t *testing.T) {
-	pool := poolDeTeste(t)
+	pool := testdb.AbrirPool(t)
 	repo := repository.NovoNotaRepository(pool)
 	nota := criarNotaDeTeste(t, repo)
 
@@ -156,7 +157,7 @@ func TestImprimirService_EstoqueIndisponivel_EsgotaRetriesENotaPermaneceAberta(t
 }
 
 func TestImprimirService_ReimpressaoAposFalhaReusaMesmaChaveDeIdempotencia(t *testing.T) {
-	pool := poolDeTeste(t)
+	pool := testdb.AbrirPool(t)
 	repo := repository.NovoNotaRepository(pool)
 	nota := criarNotaDeTeste(t, repo)
 

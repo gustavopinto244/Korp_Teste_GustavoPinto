@@ -2,79 +2,26 @@ package httpserver_test
 
 import (
 	"bytes"
-	"context"
-	"embed"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
-	"os"
 	"strconv"
-	"strings"
 	"testing"
 
-	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/gustavopinto244/korp-teste-gustavopinto/services/faturamento/internal/estoqueclient"
 	"github.com/gustavopinto244/korp-teste-gustavopinto/services/faturamento/internal/httpserver"
 	"github.com/gustavopinto244/korp-teste-gustavopinto/services/faturamento/internal/httpserver/handler"
 	"github.com/gustavopinto244/korp-teste-gustavopinto/services/faturamento/internal/ia"
-	"github.com/gustavopinto244/korp-teste-gustavopinto/services/faturamento/internal/migrate"
 	"github.com/gustavopinto244/korp-teste-gustavopinto/services/faturamento/internal/repository"
 	"github.com/gustavopinto244/korp-teste-gustavopinto/services/faturamento/internal/service"
+	"github.com/gustavopinto244/korp-teste-gustavopinto/services/faturamento/internal/testdb"
 )
-
-//go:embed testdata/*.sql
-var migrationsFS embed.FS
-
-// schemaDescartavel devolve o schema em que a suíte pode trabalhar: o do
-// search_path do DSN de teste. O setup apaga esse schema inteiro a cada
-// cenário, então a suíte se recusa a rodar contra um schema que não seja
-// declaradamente de teste — é o que impede repetir o acidente de apontar
-// TEST_DATABASE_URL_FATURAMENTO para o banco da demo e destruí-lo.
-func schemaDescartavel(t *testing.T, ctx context.Context, pool *pgxpool.Pool) string {
-	t.Helper()
-	schema, err := migrate.SchemaAlvo(ctx, pool)
-	if err != nil {
-		t.Fatalf("descobrir schema de teste: %v", err)
-	}
-	if !strings.HasSuffix(schema, "_test") {
-		t.Fatalf("TEST_DATABASE_URL_FATURAMENTO deve apontar para um schema de teste "+
-			"(search_path terminando em _test); obtido %q", schema)
-	}
-	return schema
-}
-
-// limparSchemaDeTeste apaga o schema descartável inteiro — inclusive a
-// tabela de controle de migrations, que agora mora dentro dele — para que as
-// migrations sejam reaplicadas do zero. Nada em public é tocado: aquela
-// tabela era compartilhada com o serviço de estoque.
-func limparSchemaDeTeste(t *testing.T, ctx context.Context, pool *pgxpool.Pool) {
-	t.Helper()
-	schema := schemaDescartavel(t, ctx, pool)
-	if _, err := pool.Exec(ctx, "DROP SCHEMA IF EXISTS "+pgx.Identifier{schema}.Sanitize()+" CASCADE"); err != nil {
-		t.Fatalf("limpar schema de teste %s: %v", schema, err)
-	}
-}
 
 func montarRouterDeTeste(t *testing.T, baseURLEstoque string) (*http.ServeMux, *pgxpool.Pool) {
 	t.Helper()
-	dsn := os.Getenv("TEST_DATABASE_URL_FATURAMENTO")
-	if dsn == "" {
-		t.Skip("TEST_DATABASE_URL_FATURAMENTO não configurada, pulando teste HTTP fim a fim")
-	}
-
-	ctx := context.Background()
-	pool, err := pgxpool.New(ctx, dsn)
-	if err != nil {
-		t.Fatalf("conectar ao postgres de teste: %v", err)
-	}
-	t.Cleanup(pool.Close)
-
-	limparSchemaDeTeste(t, ctx, pool)
-	if err := migrate.Aplicar(ctx, pool, migrationsFS, "testdata"); err != nil {
-		t.Fatalf("aplicar migrations: %v", err)
-	}
+	pool := testdb.AbrirPool(t)
 
 	repo := repository.NovoNotaRepository(pool)
 	cliente := estoqueclient.NovoCliente(baseURLEstoque)

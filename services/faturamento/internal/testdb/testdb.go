@@ -1,5 +1,5 @@
 // Package testdb concentra o setup do banco usado pelos testes de
-// integração do serviço de estoque. Existe para que a limpeza de schema
+// integração do serviço de faturamento. Existe para que a limpeza de schema
 // tenha uma implementação única: quando cada arquivo de teste tinha a sua,
 // todas hardcodavam o nome do schema e derrubavam os dados reais, apesar do
 // search_path de teste apontar para outro schema.
@@ -18,15 +18,15 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/gustavopinto244/korp-teste-gustavopinto/services/estoque/internal/migrate"
-	"github.com/gustavopinto244/korp-teste-gustavopinto/services/estoque/migrations"
+	"github.com/gustavopinto244/korp-teste-gustavopinto/services/faturamento/internal/migrate"
+	"github.com/gustavopinto244/korp-teste-gustavopinto/services/faturamento/migrations"
 )
 
 // VariavelDSN nomeia a variável de ambiente que aponta para o banco de
 // teste deste serviço.
-const VariavelDSN = "TEST_DATABASE_URL_ESTOQUE"
+const VariavelDSN = "TEST_DATABASE_URL_FATURAMENTO"
 
-// SufixoSchemaDeTeste é exigido no schema apontado por TEST_DATABASE_URL_ESTOQUE.
+// SufixoSchemaDeTeste é exigido no schema apontado por TEST_DATABASE_URL_FATURAMENTO.
 // É a trava que impede a suíte de apagar o schema de produção caso alguém
 // aponte a variável para o banco do docker compose.
 const SufixoSchemaDeTeste = "_test"
@@ -35,7 +35,7 @@ const SufixoSchemaDeTeste = "_test"
 // pelo search_path do DSN e aplica todas as migrations reais do serviço
 // nele. O pool é fechado automaticamente no fim do teste.
 //
-// Pula o teste se TEST_DATABASE_URL_ESTOQUE não estiver definida.
+// Pula o teste se TEST_DATABASE_URL_FATURAMENTO não estiver definida.
 func AbrirPool(t *testing.T) *pgxpool.Pool {
 	t.Helper()
 
