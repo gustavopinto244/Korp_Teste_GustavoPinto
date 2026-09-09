@@ -165,3 +165,46 @@ func asErroNegocio(err error, target **domain.ErroNegocioEstoque) bool {
 	*target = e
 	return true
 }
+
+// TestBaixarEstoque_RepeteEm500E429 cobre o que antes não era repetido: um
+// pico momentâneo no banco do estoque (500) ou um limite de taxa (429)
+// derrubava a impressão na primeira tentativa, com as outras duas sobrando
+// sem uso. Repetir é seguro porque a chamada leva Idempotency-Key.
+func TestBaixarEstoque_RepeteEm500E429(t *testing.T) {
+	casos := []struct {
+		nome           string
+		statusTransito int
+	}{
+		{"erro interno transitório", http.StatusInternalServerError},
+		{"limite de taxa", http.StatusTooManyRequests},
+	}
+
+	for _, caso := range casos {
+		t.Run(caso.nome, func(t *testing.T) {
+			var chamadas int32
+			servidor := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if atomic.AddInt32(&chamadas, 1) == 1 {
+					w.WriteHeader(caso.statusTransito)
+					return
+				}
+				w.WriteHeader(http.StatusOK)
+				_ = json.NewEncoder(w).Encode(RespostaBaixa{
+					Itens: []ItemBaixaResultado{{Codigo: "PARAF-001", SaldoAnterior: 10, SaldoAtual: 8}},
+				})
+			}))
+			defer servidor.Close()
+
+			c := NovoCliente(servidor.URL)
+			resp, err := c.BaixarEstoque(context.Background(), "impressao-nota-9", []ItemBaixa{{Codigo: "PARAF-001", Quantidade: 2}})
+			if err != nil {
+				t.Fatalf("esperava sucesso na segunda tentativa, obteve: %v", err)
+			}
+			if resp.Itens[0].SaldoAtual != 8 {
+				t.Fatalf("resposta inesperada: %+v", resp)
+			}
+			if got := atomic.LoadInt32(&chamadas); got != 2 {
+				t.Fatalf("esperava 2 chamadas (falha + repetição), obteve %d", got)
+			}
+		})
+	}
+}

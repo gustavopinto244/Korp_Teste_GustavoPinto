@@ -1,12 +1,24 @@
-<div class="produto-form">
-  <h1>{{ modoEdicao() ? 'Editar produto' : 'Novo produto' }}</h1>
+<div class="korp-pagina korp-pagina--estreita produto-form">
+  <header class="korp-cabecalho">
+    <div class="korp-cabecalho__titulo">
+      <h1>{{ modoEdicao() ? 'Editar produto' : 'Novo produto' }}</h1>
+      <p class="korp-cabecalho__subtitulo">
+        {{
+          modoEdicao()
+            ? 'Atualize a descrição ou o saldo do produto.'
+            : 'Código, descrição e saldo inicial do produto.'
+        }}
+      </p>
+    </div>
+  </header>
 
   @if (carregando()) {
-    <div class="produto-form__carregando">
+    <div class="korp-carregando">
       <mat-spinner diameter="32" />
+      <p>Carregando produto…</p>
     </div>
   } @else {
-    <form [formGroup]="form" (ngSubmit)="salvar()" class="produto-form__form">
+    <form [formGroup]="form" (ngSubmit)="salvar()" class="korp-card produto-form__form">
       <mat-form-field appearance="outline">
         <mat-label>Código</mat-label>
         <input matInput formControlName="codigo" />
@@ -38,7 +50,10 @@
         <button mat-button type="button" (click)="cancelar()">Cancelar</button>
         <button mat-flat-button color="primary" type="submit" [disabled]="salvando()">
           @if (salvando()) {
-            <mat-spinner diameter="18" />
+            <ng-container>
+              <mat-spinner diameter="18" />
+              Salvando…
+            </ng-container>
           } @else {
             Salvar
           }

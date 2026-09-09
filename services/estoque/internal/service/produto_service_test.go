@@ -45,7 +45,7 @@ func (m *produtoRepositorioMock) BuscarPorCodigo(_ context.Context, codigo strin
 	return p, nil
 }
 
-func (m *produtoRepositorioMock) Atualizar(_ context.Context, codigo, descricao string, saldo int) (*domain.Produto, error) {
+func (m *produtoRepositorioMock) Atualizar(_ context.Context, codigo, descricao string, saldo int, saldoEsperado *int) (*domain.Produto, error) {
 	p, existe := m.produtos[codigo]
 	if !existe {
 		return nil, domain.ErrProdutoNaoEncontrado
@@ -55,7 +55,7 @@ func (m *produtoRepositorioMock) Atualizar(_ context.Context, codigo, descricao 
 	return p, nil
 }
 
-func (m *produtoRepositorioMock) Remover(_ context.Context, codigo string) error {
+func (m *produtoRepositorioMock) Desativar(_ context.Context, codigo string) error {
 	if _, existe := m.produtos[codigo]; !existe {
 		return domain.ErrProdutoNaoEncontrado
 	}
@@ -123,7 +123,7 @@ func TestProdutoService_Atualizar(t *testing.T) {
 		if _, err := s.Criar(ctx, "PARAF-001", "Parafuso", 10); err != nil {
 			t.Fatalf("criar: %v", err)
 		}
-		p, err := s.Atualizar(ctx, "PARAF-001", "Parafuso novo", 20)
+		p, err := s.Atualizar(ctx, "PARAF-001", "Parafuso novo", 20, nil)
 		if err != nil {
 			t.Fatalf("erro inesperado: %v", err)
 		}
@@ -134,7 +134,7 @@ func TestProdutoService_Atualizar(t *testing.T) {
 
 	t.Run("nao encontrado", func(t *testing.T) {
 		s := service.NovoProdutoService(novoMock())
-		_, err := s.Atualizar(ctx, "NAO-EXISTE", "x", 1)
+		_, err := s.Atualizar(ctx, "NAO-EXISTE", "x", 1, nil)
 		if !errors.Is(err, domain.ErrProdutoNaoEncontrado) {
 			t.Fatalf("esperava ErrProdutoNaoEncontrado, obteve %v", err)
 		}
@@ -146,7 +146,7 @@ func TestProdutoService_Atualizar(t *testing.T) {
 		if _, err := s.Criar(ctx, "PARAF-001", "Parafuso", 10); err != nil {
 			t.Fatalf("criar: %v", err)
 		}
-		_, err := s.Atualizar(ctx, "PARAF-001", "Parafuso", -5)
+		_, err := s.Atualizar(ctx, "PARAF-001", "Parafuso", -5, nil)
 		if !errors.Is(err, domain.ErrValidacao) {
 			t.Fatalf("esperava ErrValidacao, obteve %v", err)
 		}

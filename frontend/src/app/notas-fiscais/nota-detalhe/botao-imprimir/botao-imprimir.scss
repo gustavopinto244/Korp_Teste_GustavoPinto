@@ -1,5 +1,42 @@
-button {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.5rem;
+.botao-imprimir {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.4rem;
+
+  &__botao {
+    min-width: 176px;
+    height: 44px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+  }
+
+  &__dica,
+  &__erro {
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+    margin: 0;
+    font-size: 0.8125rem;
+    max-width: 32ch;
+    text-align: right;
+  }
+
+  &__dica {
+    color: var(--mat-sys-on-surface-variant);
+  }
+
+  &__erro {
+    color: var(--mat-sys-error);
+    font-weight: 500;
+  }
+
+  &__icone-linha {
+    font-size: 16px;
+    width: 16px;
+    height: 16px;
+    flex-shrink: 0;
+  }
 }

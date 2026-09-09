@@ -59,7 +59,11 @@ func (h *InterpretarHandler) Interpretar(w http.ResponseWriter, r *http.Request)
 
 	catalogo := make([]ia.CatalogoItem, 0, len(produtos))
 	for _, p := range produtos {
-		catalogo = append(catalogo, ia.CatalogoItem{Codigo: p.Codigo, Descricao: p.Descricao})
+		catalogo = append(catalogo, ia.CatalogoItem{
+			Codigo:          p.Codigo,
+			Descricao:       p.Descricao,
+			SaldoDisponivel: p.Saldo,
+		})
 	}
 
 	resultado, err := h.interpretador.Interpretar(ctx, req.Texto, catalogo)

@@ -26,6 +26,11 @@ type produtoRequest struct {
 	Codigo    string `json:"codigo"`
 	Descricao string `json:"descricao"`
 	Saldo     int    `json:"saldo"`
+	// SaldoEsperado é opcional e só vale no PUT: o saldo que o cliente viu
+	// quando abriu o formulário. Informado, faz a atualização ser recusada
+	// com 409 se o saldo já tiver mudado — tipicamente porque uma nota foi
+	// impressa nesse meio-tempo. Ausente, o valor enviado sobrescreve.
+	SaldoEsperado *int `json:"saldoEsperado,omitempty"`
 }
 
 type produtoResponse struct {
@@ -101,7 +106,7 @@ func (h *ProdutoHandler) Atualizar(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	produto, err := h.svc.Atualizar(r.Context(), codigo, req.Descricao, req.Saldo)
+	produto, err := h.svc.Atualizar(r.Context(), codigo, req.Descricao, req.Saldo, req.SaldoEsperado)
 	if err != nil {
 		apierror.EscreverErro(w, err)
 		return

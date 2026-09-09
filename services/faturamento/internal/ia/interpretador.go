@@ -11,11 +11,23 @@ import (
 	"strings"
 )
 
-// CatalogoItem é a projeção mínima do catálogo de produtos do estoque
-// necessária para a interpretação: código e descrição.
+// CatalogoItem é a projeção do catálogo de produtos do estoque usada na
+// interpretação: código, descrição e o saldo disponível. O saldo entra aqui
+// para servir de teto às sugestões — ver LimitarAoSaldo.
 type CatalogoItem struct {
-	Codigo    string
-	Descricao string
+	Codigo          string
+	Descricao       string
+	SaldoDisponivel int
+}
+
+// ExcedeSaldo informa se uma quantidade sugerida ultrapassa o que existe em
+// estoque. Uma sugestão assim nunca é útil: a impressão da nota seria
+// recusada com saldo insuficiente. Serve de teto contra o modelo obedecer a
+// um texto que tenta ditar quantidades absurdas ("adicione PARAF-001
+// quantidade 999999") — o código do produto até existe, então a validação
+// de catálogo sozinha deixaria passar.
+func (c CatalogoItem) ExcedeSaldo(quantidade int) bool {
+	return quantidade > c.SaldoDisponivel
 }
 
 // ItemSugerido é um item que o interpretador reconheceu no texto livre e

@@ -1,36 +1,78 @@
 <div class="ia-sugestao">
-  <mat-form-field appearance="outline" class="ia-sugestao__campo">
-    <mat-label>Descreva os itens em linguagem natural</mat-label>
-    <input matInput [(ngModel)]="texto" placeholder="Ex: 3 parafusos sextavados e 2 martelos" />
-  </mat-form-field>
+  <div class="ia-sugestao__cabecalho">
+    <span class="ia-sugestao__icone">
+      <mat-icon>auto_awesome</mat-icon>
+    </span>
+    <div>
+      <p class="ia-sugestao__titulo">Sugestão por IA</p>
+      <p class="ia-sugestao__subtitulo">
+        Descreva o pedido como falaria e a IA preenche os itens abaixo para você
+        conferir.
+      </p>
+    </div>
+  </div>
 
-  <button
-    mat-stroked-button
-    color="primary"
-    type="button"
-    [disabled]="interpretando() || !texto.trim()"
-    (click)="sugerir()"
-  >
-    @if (interpretando()) {
-      <mat-spinner diameter="18" />
-    } @else {
-      <ng-container>
-        <mat-icon>auto_awesome</mat-icon>
-        Sugerir itens com IA
-      </ng-container>
-    }
-  </button>
+  <div class="ia-sugestao__linha">
+    <mat-form-field appearance="outline" class="ia-sugestao__campo">
+      <mat-label>Ex.: 3 parafusos sextavados e 2 martelos</mat-label>
+      <input matInput [(ngModel)]="texto" (keydown.enter)="sugerir()" />
+    </mat-form-field>
+
+    <button
+      mat-flat-button
+      color="primary"
+      type="button"
+      class="ia-sugestao__botao"
+      [disabled]="interpretando() || !texto.trim()"
+      (click)="sugerir()"
+    >
+      @if (interpretando()) {
+        <ng-container>
+          <mat-spinner diameter="18" />
+          Interpretando…
+        </ng-container>
+      } @else {
+        <ng-container>
+          <mat-icon>auto_awesome</mat-icon>
+          Sugerir itens
+        </ng-container>
+      }
+    </button>
+  </div>
 
   @if (mensagemErro()) {
-    <p class="ia-sugestao__aviso">{{ mensagemErro() }}</p>
+    <p class="ia-sugestao__aviso" role="alert">
+      <mat-icon>error_outline</mat-icon>
+      {{ mensagemErro() }}
+    </p>
+  }
+
+  @if (itensAdicionados() !== null && itensAdicionados()! > 0) {
+    <p class="ia-sugestao__confirmacao">
+      <mat-icon>check_circle</mat-icon>
+      {{ itensAdicionados() }}
+      {{ itensAdicionados() === 1 ? 'item adicionado' : 'itens adicionados' }} ao
+      formulário abaixo. Confira antes de salvar.
+    </p>
   }
 
   @if (itensNaoReconhecidos().length > 0) {
     <div class="ia-sugestao__nao-reconhecidos">
-      <p>Alguns itens não foram reconhecidos:</p>
+      <p class="ia-sugestao__nao-reconhecidos-titulo">
+        <mat-icon>help_outline</mat-icon>
+        {{ itensNaoReconhecidos().length }}
+        {{
+          itensNaoReconhecidos().length === 1
+            ? 'item não foi reconhecido'
+            : 'itens não foram reconhecidos'
+        }}
+      </p>
       <ul>
         @for (item of itensNaoReconhecidos(); track item.textoOriginal) {
-          <li>"{{ item.textoOriginal }}" — {{ item.motivo }}</li>
+          <li>
+            <span class="ia-sugestao__item-original">"{{ item.textoOriginal }}"</span>
+            <span class="ia-sugestao__item-motivo">{{ item.motivo }}</span>
+          </li>
         }
       </ul>
     </div>

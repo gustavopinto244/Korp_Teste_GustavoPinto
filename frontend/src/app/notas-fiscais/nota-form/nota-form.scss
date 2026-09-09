@@ -1,12 +1,40 @@
 .nota-form {
-  padding: 1.5rem;
-  max-width: 720px;
-  margin: 0 auto;
+  &__divisor {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    margin: 1.75rem 0 1rem;
+    color: var(--mat-sys-on-surface-variant);
+    font-size: 0.8125rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+
+    &::after {
+      content: '';
+      flex: 1;
+      height: 1px;
+      background: var(--mat-sys-outline-variant);
+    }
+  }
+
+  &__itens {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+  }
 
   &__linha {
     display: flex;
     align-items: flex-start;
     gap: 0.5rem;
+    padding: 0.5rem 0.75rem;
+    border-radius: var(--korp-radius-md);
+    transition: background-color 0.15s ease;
+
+    &:hover {
+      background: var(--mat-sys-surface-container-low);
+    }
   }
 
   &__campo-produto {
@@ -15,12 +43,29 @@
 
   &__campo-quantidade {
     flex: 1;
+    min-width: 96px;
+  }
+
+  &__remover {
+    margin-top: 4px;
+  }
+
+  &__adicionar {
+    margin-top: 0.25rem;
   }
 
   &__acoes {
     display: flex;
     justify-content: flex-end;
     gap: 0.5rem;
-    margin-top: 1rem;
+    margin-top: 1.75rem;
+    padding-top: 1.25rem;
+    border-top: 1px solid var(--mat-sys-outline-variant);
+  }
+
+  button[type='submit'] {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
   }
 }

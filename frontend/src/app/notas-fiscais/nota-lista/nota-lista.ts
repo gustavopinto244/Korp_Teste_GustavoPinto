@@ -12,15 +12,7 @@ import { NotaFiscalService } from '../../core/services/nota-fiscal.service';
 import { ErroApi } from '../../core/models/erro-api';
 
 @Component({
-  imports: [
-    DatePipe,
-    MatTableModule,
-    MatButtonModule,
-    MatIconModule,
-    MatChipsModule,
-    MatProgressSpinnerModule,
-    RouterLink,
-  ],
+  imports: [DatePipe, MatTableModule, MatButtonModule, MatIconModule, MatChipsModule, MatProgressSpinnerModule, RouterLink],
   selector: 'app-nota-lista',
   styleUrl: './nota-lista.scss',
   templateUrl: './nota-lista.html',

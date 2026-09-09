@@ -10,6 +10,7 @@ package ia
 
 import (
 	"context"
+	"fmt"
 	"regexp"
 	"strconv"
 	"strings"
@@ -76,6 +77,20 @@ func (i *interpretadorMock) Interpretar(_ context.Context, texto string, catalog
 			resultado.ItensNaoReconhecidos = append(resultado.ItensNaoReconhecidos, ItemNaoReconhecido{
 				TextoOriginal: clausulaOriginal,
 				Motivo:        "produto não encontrado no catálogo",
+			})
+			continue
+		}
+
+		if item.ExcedeSaldo(quantidade) {
+			// Mesmo teto aplicado à interpretação por modelo: o
+			// comportamento da tela não pode depender de qual provider está
+			// configurado.
+			resultado.ItensNaoReconhecidos = append(resultado.ItensNaoReconhecidos, ItemNaoReconhecido{
+				TextoOriginal: clausulaOriginal,
+				Motivo: fmt.Sprintf(
+					"quantidade solicitada (%d) acima do saldo disponível (%d)",
+					quantidade, item.SaldoDisponivel,
+				),
 			})
 			continue
 		}

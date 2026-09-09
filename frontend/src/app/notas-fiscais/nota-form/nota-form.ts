@@ -12,8 +12,11 @@ import { MatInputModule } from '@angular/material/input';
 import { MatButtonModule } from '@angular/material/button';
 import { MatIconModule } from '@angular/material/icon';
 import { MatAutocompleteModule } from '@angular/material/autocomplete';
+import { MatTooltipModule } from '@angular/material/tooltip';
+import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { MatSnackBar } from '@angular/material/snack-bar';
-import { debounceTime, switchMap, of, catchError } from 'rxjs';
+import { AbstractControl } from '@angular/forms';
+import { debounceTime, switchMap, of, catchError, Subject, takeUntil } from 'rxjs';
 import { ProdutoService } from '../../core/services/produto.service';
 import { NotaFiscalService } from '../../core/services/nota-fiscal.service';
 import { Produto } from '../../core/models/produto';
@@ -29,6 +32,8 @@ import { IaSugestao } from './ia-sugestao/ia-sugestao';
     MatButtonModule,
     MatIconModule,
     MatAutocompleteModule,
+    MatTooltipModule,
+    MatProgressSpinnerModule,
     IaSugestao,
   ],
   selector: 'app-nota-form',
@@ -49,6 +54,13 @@ export class NotaForm implements OnInit {
   protected readonly salvando = signal(false);
   protected readonly sugestoesPorLinha = signal<Produto[][]>([]);
 
+  // Uma inscrição de vida longa por linha (o valueChanges do autocomplete)
+  // não morre sozinha ao remover a linha do FormArray — só quando o
+  // componente inteiro é destruído (takeUntilDestroyed). Este mapa guarda o
+  // gatilho de encerramento por linha para fechar a inscrição órfã assim
+  // que a linha é removida, sem esperar o componente inteiro morrer.
+  private readonly encerramentoPorLinha = new Map<AbstractControl, Subject<void>>();
+
   protected readonly form = this.fb.group({
     itens: this.fb.array([this.criarLinhaItem()]),
   });
@@ -64,8 +76,13 @@ export class NotaForm implements OnInit {
       quantidade: [1, [Validators.required, Validators.min(1)]],
     });
 
-    // Autocomplete de produto: busca a cada digitação, com debounce, sem
-    // travar a UI enquanto o usuário ainda está digitando.
+    // Sinal de encerramento próprio desta linha: disparado em removerLinha().
+    const encerrarLinha$ = new Subject<void>();
+    this.encerramentoPorLinha.set(linha, encerrarLinha$);
+
+    // Autocomplete de produto: busca a cada digitação, com debounce. A
+    // chamada a `produtoService.listar()` bate no cache (`shareReplay(1)`)
+    // depois da primeira vez, então o filtro abaixo já opera em memória.
     linha.controls.produtoDescricao.valueChanges
       .pipe(
         debounceTime(300),
@@ -84,13 +101,16 @@ export class NotaForm implements OnInit {
             }),
           ),
         ),
+        // Encerra quando a linha é removida (vida curta, ligada à linha) ou
+        // quando o componente inteiro é destruído (vida longa, fallback).
+        takeUntil(encerrarLinha$),
         takeUntilDestroyed(this.destroyRef),
       )
       .subscribe((produtos) => {
         const index = this.itens.controls.indexOf(linha);
-        // A linha pode já ter sido removida enquanto a busca corria: sem esta
-        // guarda, `indexOf` devolve -1 e o resultado viraria uma propriedade
-        // solta no array de sugestões.
+        // Defesa adicional: mesmo com o encerramento explícito acima, uma
+        // resposta que já estava em voo quando a linha foi removida não
+        // deve virar uma propriedade solta no array de sugestões.
         if (index === -1) {
           return;
         }
@@ -122,6 +142,11 @@ export class NotaForm implements OnInit {
   }
 
   protected removerLinha(index: number): void {
+    const linha = this.itens.at(index);
+    this.encerramentoPorLinha.get(linha)?.next();
+    this.encerramentoPorLinha.get(linha)?.complete();
+    this.encerramentoPorLinha.delete(linha);
+
     this.itens.removeAt(index);
     const atuais = [...this.sugestoesPorLinha()];
     atuais.splice(index, 1);

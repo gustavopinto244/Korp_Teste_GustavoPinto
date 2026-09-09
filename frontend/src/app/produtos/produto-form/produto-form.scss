@@ -1,12 +1,9 @@
 .produto-form {
-  padding: 1.5rem;
-  max-width: 480px;
-  margin: 0 auto;
-
   &__form {
     display: flex;
     flex-direction: column;
     gap: 0.5rem;
+    padding: 1.75rem 1.75rem 1.5rem;
   }
 
   &__acoes {
@@ -14,12 +11,14 @@
     justify-content: flex-end;
     gap: 0.5rem;
     margin-top: 1rem;
+    padding-top: 1.25rem;
+    border-top: 1px solid var(--mat-sys-outline-variant);
   }
 
-  &__carregando {
-    display: flex;
-    justify-content: center;
-    padding: 2rem;
+  button[type='submit'] {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
   }
 
   mat-form-field {

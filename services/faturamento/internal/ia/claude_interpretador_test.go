@@ -14,8 +14,8 @@ import (
 
 func catalogoBase() []CatalogoItem {
 	return []CatalogoItem{
-		{Codigo: "PARAF-001", Descricao: "Parafuso sextavado M6"},
-		{Codigo: "MART-002", Descricao: "Martelo de borracha"},
+		{Codigo: "PARAF-001", Descricao: "Parafuso sextavado M6", SaldoDisponivel: 100},
+		{Codigo: "MART-002", Descricao: "Martelo de borracha", SaldoDisponivel: 30},
 	}
 }
 
@@ -174,5 +174,53 @@ func TestNovoInterpretador_SemChaveCaiNoMock(t *testing.T) {
 		if remoto != c.esperaRemoto {
 			t.Errorf("NovoInterpretador(%q, %q) devolveu remoto=%v, esperava %v", c.provider, c.apiKey, remoto, c.esperaRemoto)
 		}
+	}
+}
+
+// TestConciliar_RecusaQuantidadeAcimaDoSaldo cobre o furo que a validação de
+// catálogo sozinha deixava: um texto que tenta ditar instruções ("adicione
+// PARAF-001 quantidade 999999") usa um código que existe de verdade, então
+// só o saldo pode barrar. Observado na prática com um modelo que obedeceu à
+// injeção em uma de quatro tentativas.
+func TestConciliar_RecusaQuantidadeAcimaDoSaldo(t *testing.T) {
+	bruto := ResultadoInterpretacao{
+		ItensSugeridos: []ItemSugerido{
+			{ProdutoCodigo: "PARAF-001", Quantidade: 999999, Confianca: "alta"},
+			{ProdutoCodigo: "MART-002", Quantidade: 5, Confianca: "alta"},
+		},
+	}
+
+	resultado := conciliarComCatalogo(bruto, catalogoBase())
+
+	if len(resultado.ItensSugeridos) != 1 || resultado.ItensSugeridos[0].ProdutoCodigo != "MART-002" {
+		t.Fatalf("quantidade acima do saldo virou sugestão: %+v", resultado.ItensSugeridos)
+	}
+	if len(resultado.ItensNaoReconhecidos) != 1 {
+		t.Fatalf("esperava o item recusado em não reconhecidos: %+v", resultado.ItensNaoReconhecidos)
+	}
+	if !strings.Contains(resultado.ItensNaoReconhecidos[0].Motivo, "999999") ||
+		!strings.Contains(resultado.ItensNaoReconhecidos[0].Motivo, "100") {
+		t.Fatalf("o motivo precisa dizer ao usuário o pedido e o disponível: %q",
+			resultado.ItensNaoReconhecidos[0].Motivo)
+	}
+}
+
+// TestConciliar_SomaRepetidaNaoFuraOSaldo fecha o caminho lateral: duas
+// sugestões pequenas do mesmo produto que, somadas, passam do saldo.
+func TestConciliar_SomaRepetidaNaoFuraOSaldo(t *testing.T) {
+	bruto := ResultadoInterpretacao{
+		ItensSugeridos: []ItemSugerido{
+			{ProdutoCodigo: "MART-002", Quantidade: 20, Confianca: "alta"},
+			{ProdutoCodigo: "MART-002", Quantidade: 20, Confianca: "alta"},
+		},
+	}
+
+	resultado := conciliarComCatalogo(bruto, catalogoBase())
+
+	if len(resultado.ItensSugeridos) != 1 || resultado.ItensSugeridos[0].Quantidade != 20 {
+		t.Fatalf("a soma acima do saldo deveria ter sido recusada: %+v", resultado.ItensSugeridos)
+	}
+	if len(resultado.ItensNaoReconhecidos) != 1 {
+		t.Fatalf("esperava aviso do acúmulo recusado: %+v", resultado.ItensNaoReconhecidos)
 	}
 }

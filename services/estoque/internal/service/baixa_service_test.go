@@ -293,3 +293,42 @@ func TestBaixaService_ChaveRepetidaComPayloadDiferente(t *testing.T) {
 		t.Fatalf("esperava ErrChaveIdempotenciaConflitante, obteve %v", err)
 	}
 }
+
+// TestBaixaService_ProdutoDesativadoContinuaImprimivel cobre o defeito em
+// que excluir um produto travava notas: a nota Aberta que o referenciava
+// passava a falhar com PRODUTO_NAO_ENCONTRADO na impressão e, como o status
+// só vai de Aberta para Fechada, ficava sem saída nenhuma. A exclusão agora
+// é lógica: o produto sai do catálogo e a baixa continua funcionando.
+func TestBaixaService_ProdutoDesativadoContinuaImprimivel(t *testing.T) {
+	baixaSvc, produtoRepo := setup(t)
+	ctx := context.Background()
+
+	if _, err := produtoRepo.Criar(ctx, "DESAT-001", "Parafuso descontinuado", 10); err != nil {
+		t.Fatalf("criar produto: %v", err)
+	}
+
+	// A nota já foi criada; só então o produto sai de linha.
+	if err := produtoRepo.Desativar(ctx, "DESAT-001"); err != nil {
+		t.Fatalf("desativar produto: %v", err)
+	}
+
+	catalogo, err := produtoRepo.Listar(ctx)
+	if err != nil {
+		t.Fatalf("listar catálogo: %v", err)
+	}
+	for _, p := range catalogo {
+		if p.Codigo == "DESAT-001" {
+			t.Fatal("produto desativado não pode aparecer no catálogo")
+		}
+	}
+
+	resp, err := baixaSvc.Processar(ctx, "chave-desativado", service.RequisicaoBaixa{
+		Itens: []service.ItemBaixa{{Codigo: "DESAT-001", Quantidade: 3}},
+	})
+	if err != nil {
+		t.Fatalf("a impressão da nota deveria continuar funcionando: %v", err)
+	}
+	if resp.Itens[0].SaldoAtual != 7 {
+		t.Fatalf("saldo após baixa = %d, esperado 7", resp.Itens[0].SaldoAtual)
+	}
+}

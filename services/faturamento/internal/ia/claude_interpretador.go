@@ -247,9 +247,30 @@ func conciliarComCatalogo(bruto ResultadoInterpretacao, catalogo []CatalogoItem)
 			})
 			continue
 		}
+		if produto.ExcedeSaldo(sugerido.Quantidade) {
+			resultado.ItensNaoReconhecidos = append(resultado.ItensNaoReconhecidos, ItemNaoReconhecido{
+				TextoOriginal: produto.Descricao,
+				Motivo: fmt.Sprintf(
+					"quantidade sugerida (%d) acima do saldo disponível (%d)",
+					sugerido.Quantidade, produto.SaldoDisponivel,
+				),
+			})
+			continue
+		}
 
 		if idx, repetido := posicao[produto.Codigo]; repetido {
-			resultado.ItensSugeridos[idx].Quantidade += sugerido.Quantidade
+			somada := resultado.ItensSugeridos[idx].Quantidade + sugerido.Quantidade
+			if produto.ExcedeSaldo(somada) {
+				resultado.ItensNaoReconhecidos = append(resultado.ItensNaoReconhecidos, ItemNaoReconhecido{
+					TextoOriginal: produto.Descricao,
+					Motivo: fmt.Sprintf(
+						"quantidade acumulada (%d) acima do saldo disponível (%d)",
+						somada, produto.SaldoDisponivel,
+					),
+				})
+				continue
+			}
+			resultado.ItensSugeridos[idx].Quantidade = somada
 			continue
 		}
 

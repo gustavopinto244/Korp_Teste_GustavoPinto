@@ -34,12 +34,21 @@ const (
 // par (status HTTP, ErroAPI) correspondente ao contrato único de erro.
 func mapear(err error) (int, ErroAPI) {
 	var errSaldo *domain.ErrSaldoInsuficiente
+	var errSaldoDesatualizado *domain.ErrSaldoDesatualizado
 
 	switch {
 	case errors.Is(err, domain.ErrProdutoNaoEncontrado):
 		return http.StatusNotFound, ErroAPI{
 			Codigo:    "PRODUTO_NAO_ENCONTRADO",
 			Mensagem:  "Produto não encontrado.",
+			Tipo:      TipoNegocio,
+			Repetivel: false,
+		}
+
+	case errors.As(err, &errSaldoDesatualizado):
+		return http.StatusConflict, ErroAPI{
+			Codigo:    "SALDO_DESATUALIZADO",
+			Mensagem:  errSaldoDesatualizado.Error(),
 			Tipo:      TipoNegocio,
 			Repetivel: false,
 		}

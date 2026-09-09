@@ -1,8 +1,17 @@
 <mat-toolbar color="primary" class="app-toolbar">
-  <span class="app-toolbar__titulo">Emissão de notas fiscais</span>
+  <a routerLink="/produtos" class="app-toolbar__marca">
+    <mat-icon class="app-toolbar__logo">receipt_long</mat-icon>
+    <span class="app-toolbar__titulo">Korp <strong>NF-e</strong></span>
+  </a>
   <nav class="app-toolbar__nav">
-    <a routerLink="/produtos" routerLinkActive="app-toolbar__link--ativo">Produtos</a>
-    <a routerLink="/notas" routerLinkActive="app-toolbar__link--ativo">Notas fiscais</a>
+    <a routerLink="/produtos" routerLinkActive="app-toolbar__link--ativo">
+      <mat-icon>inventory_2</mat-icon>
+      Produtos
+    </a>
+    <a routerLink="/notas" routerLinkActive="app-toolbar__link--ativo">
+      <mat-icon>description</mat-icon>
+      Notas fiscais
+    </a>
   </nav>
 </mat-toolbar>
 

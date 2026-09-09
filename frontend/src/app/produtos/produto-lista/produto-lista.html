@@ -1,6 +1,9 @@
-<div class="produto-lista">
-  <header class="produto-lista__cabecalho">
-    <h1>Produtos</h1>
+<div class="korp-pagina produto-lista">
+  <header class="korp-cabecalho">
+    <div class="korp-cabecalho__titulo">
+      <h1>Produtos</h1>
+      <p class="korp-cabecalho__subtitulo">Cadastro do catálogo e acompanhamento de saldo.</p>
+    </div>
     <a mat-flat-button color="primary" routerLink="/produtos/novo">
       <mat-icon>add</mat-icon>
       Novo produto
@@ -8,44 +11,57 @@
   </header>
 
   @if (carregando()) {
-    <div class="produto-lista__carregando">
+    <div class="korp-carregando">
       <mat-spinner diameter="32" />
+      <p>Carregando produtos…</p>
+    </div>
+  } @else if (produtos().length === 0) {
+    <div class="korp-card korp-estado-vazio">
+      <mat-icon>inventory_2</mat-icon>
+      <p class="korp-estado-vazio__titulo">Nenhum produto cadastrado</p>
+      <p class="korp-estado-vazio__texto">
+        Cadastre o primeiro produto para poder incluí-lo em uma nota fiscal.
+      </p>
+      <a mat-flat-button color="primary" routerLink="/produtos/novo">
+        <mat-icon>add</mat-icon>
+        Cadastrar produto
+      </a>
     </div>
   } @else {
-    <table mat-table [dataSource]="produtos()" class="mat-elevation-z1">
-      <ng-container matColumnDef="codigo">
-        <th mat-header-cell *matHeaderCellDef>Código</th>
-        <td mat-cell *matCellDef="let produto">{{ produto.codigo }}</td>
-      </ng-container>
+    <div class="korp-tabela-card">
+      <table mat-table [dataSource]="produtos()">
+        <ng-container matColumnDef="codigo">
+          <th mat-header-cell *matHeaderCellDef>Código</th>
+          <td mat-cell *matCellDef="let produto"><span class="produto-lista__codigo">{{ produto.codigo }}</span></td>
+        </ng-container>
 
-      <ng-container matColumnDef="descricao">
-        <th mat-header-cell *matHeaderCellDef>Descrição</th>
-        <td mat-cell *matCellDef="let produto">{{ produto.descricao }}</td>
-      </ng-container>
+        <ng-container matColumnDef="descricao">
+          <th mat-header-cell *matHeaderCellDef>Descrição</th>
+          <td mat-cell *matCellDef="let produto">{{ produto.descricao }}</td>
+        </ng-container>
 
-      <ng-container matColumnDef="saldo">
-        <th mat-header-cell *matHeaderCellDef>Saldo</th>
-        <td mat-cell *matCellDef="let produto">{{ produto.saldo }}</td>
-      </ng-container>
+        <ng-container matColumnDef="saldo">
+          <th mat-header-cell *matHeaderCellDef class="produto-lista__col-saldo">Saldo</th>
+          <td mat-cell *matCellDef="let produto" class="produto-lista__col-saldo">
+            <span [class.produto-lista__saldo--zero]="produto.saldo === 0">{{ produto.saldo }}</span>
+          </td>
+        </ng-container>
 
-      <ng-container matColumnDef="acoes">
-        <th mat-header-cell *matHeaderCellDef></th>
-        <td mat-cell *matCellDef="let produto">
-          <a mat-icon-button [routerLink]="['/produtos', produto.codigo, 'editar']" aria-label="Editar">
-            <mat-icon>edit</mat-icon>
-          </a>
-          <button mat-icon-button (click)="remover(produto)" aria-label="Remover">
-            <mat-icon>delete</mat-icon>
-          </button>
-        </td>
-      </ng-container>
+        <ng-container matColumnDef="acoes">
+          <th mat-header-cell *matHeaderCellDef></th>
+          <td mat-cell *matCellDef="let produto" class="produto-lista__col-acoes">
+            <a mat-icon-button [routerLink]="['/produtos', produto.codigo, 'editar']" matTooltip="Editar" aria-label="Editar">
+              <mat-icon>edit</mat-icon>
+            </a>
+            <button mat-icon-button (click)="remover(produto)" matTooltip="Remover" aria-label="Remover">
+              <mat-icon>delete_outline</mat-icon>
+            </button>
+          </td>
+        </ng-container>
 
-      <tr mat-header-row *matHeaderRowDef="colunas"></tr>
-      <tr mat-row *matRowDef="let row; columns: colunas"></tr>
-    </table>
-
-    @if (produtos().length === 0) {
-      <p class="produto-lista__vazio">Nenhum produto cadastrado.</p>
-    }
+        <tr mat-header-row *matHeaderRowDef="colunas"></tr>
+        <tr mat-row *matRowDef="let row; columns: colunas"></tr>
+      </table>
+    </div>
   }
 </div>

@@ -4,6 +4,7 @@ import { ActivatedRoute } from '@angular/router';
 import { MatChipsModule } from '@angular/material/chips';
 import { MatTableModule } from '@angular/material/table';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
+import { MatIconModule } from '@angular/material/icon';
 import { MatSnackBar } from '@angular/material/snack-bar';
 import { NotaFiscal } from '../../core/models/nota-fiscal';
 import { NotaFiscalService } from '../../core/services/nota-fiscal.service';
@@ -11,7 +12,14 @@ import { ErroApi } from '../../core/models/erro-api';
 import { BotaoImprimir } from './botao-imprimir/botao-imprimir';
 
 @Component({
-  imports: [DatePipe, MatChipsModule, MatTableModule, MatProgressSpinnerModule, BotaoImprimir],
+  imports: [
+    DatePipe,
+    MatChipsModule,
+    MatTableModule,
+    MatProgressSpinnerModule,
+    MatIconModule,
+    BotaoImprimir,
+  ],
   selector: 'app-nota-detalhe',
   styleUrl: './nota-detalhe.scss',
   templateUrl: './nota-detalhe.html',
@@ -24,6 +32,11 @@ export class NotaDetalhe implements OnInit {
   protected readonly nota = signal<NotaFiscal | null>(null);
   protected readonly carregando = signal(true);
   protected readonly colunas = ['produtoCodigo', 'produtoDescricao', 'quantidade'];
+  // true só quando a nota foi fechada *nesta sessão de tela*, por uma
+  // impressão que acabou de acontecer — não quando o usuário simplesmente
+  // abre o detalhe de uma nota que já estava Fechada. Dá a "sensação de
+  // conclusão" pedida sem confundir notas antigas com uma ação recente.
+  protected readonly impressaAgora = signal(false);
 
   // Carrega a nota a partir do id na rota assim que o componente é montado.
   ngOnInit(): void {
@@ -44,5 +57,6 @@ export class NotaDetalhe implements OnInit {
   // basta refletir localmente sem nova requisição.
   protected aoAtualizarNota(nota: NotaFiscal): void {
     this.nota.set(nota);
+    this.impressaAgora.set(true);
   }
 }

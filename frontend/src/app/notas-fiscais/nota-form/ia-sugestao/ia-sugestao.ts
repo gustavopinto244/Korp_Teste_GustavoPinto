@@ -37,6 +37,10 @@ export class IaSugestao {
   protected readonly interpretando = signal(false);
   protected readonly itensNaoReconhecidos = signal<ItemNaoReconhecido[]>([]);
   protected readonly mensagemErro = signal<string | null>(null);
+  // Quantos itens a última interpretação bem-sucedida adicionou ao
+  // formulário — só para dar uma confirmação visual de que o recurso fez
+  // algo, além de já preencher o FormArray silenciosamente.
+  protected readonly itensAdicionados = signal<number | null>(null);
 
   protected sugerir(): void {
     if (!this.texto.trim()) {
@@ -46,6 +50,7 @@ export class IaSugestao {
     this.interpretando.set(true);
     this.mensagemErro.set(null);
     this.itensNaoReconhecidos.set([]);
+    this.itensAdicionados.set(null);
 
     this.notaFiscalService
       .interpretar(this.texto)
@@ -54,6 +59,7 @@ export class IaSugestao {
         next: (resultado) => {
           this.itensSugeridos.emit(resultado.itensSugeridos);
           this.itensNaoReconhecidos.set(resultado.itensNaoReconhecidos);
+          this.itensAdicionados.set(resultado.itensSugeridos.length);
         },
         error: () => {
           this.mensagemErro.set(

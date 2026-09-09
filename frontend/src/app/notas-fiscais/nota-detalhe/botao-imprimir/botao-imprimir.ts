@@ -2,6 +2,7 @@ import { Component, EventEmitter, Input, Output, inject, signal } from '@angular
 import { MatButtonModule } from '@angular/material/button';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { MatTooltipModule } from '@angular/material/tooltip';
+import { MatIconModule } from '@angular/material/icon';
 import { MatSnackBar } from '@angular/material/snack-bar';
 import { finalize } from 'rxjs';
 import { NotaFiscalService } from '../../../core/services/nota-fiscal.service';
@@ -17,7 +18,7 @@ type EstadoImpressao = 'idle' | 'processando' | 'sucesso' | 'erro';
  * proteção equivalente que já existe no backend (idempotência).
  */
 @Component({
-  imports: [MatButtonModule, MatProgressSpinnerModule, MatTooltipModule],
+  imports: [MatButtonModule, MatProgressSpinnerModule, MatTooltipModule, MatIconModule],
   selector: 'app-botao-imprimir',
   styleUrl: './botao-imprimir.scss',
   templateUrl: './botao-imprimir.html',
@@ -30,6 +31,10 @@ export class BotaoImprimir {
   @Output() notaAtualizada = new EventEmitter<NotaFiscal>();
 
   protected readonly estado = signal<EstadoImpressao>('idle');
+  // Mensagem de erro exibida de forma persistente ao lado do botão — o
+  // snackbar já avisa, mas ele desaparece sozinho; na gravação em vídeo o
+  // estado de falha precisa continuar visível até o usuário tentar de novo.
+  protected readonly mensagemErro = signal<string | null>(null);
 
   protected get desabilitado(): boolean {
     return this.nota.status !== 'Aberta' || this.estado() === 'processando';
@@ -45,6 +50,7 @@ export class BotaoImprimir {
     }
 
     this.estado.set('processando');
+    this.mensagemErro.set(null);
 
     this.notaFiscalService
       .imprimir(this.nota.id)
@@ -68,6 +74,7 @@ export class BotaoImprimir {
         },
         error: (erro: ErroApi) => {
           this.estado.set('erro');
+          this.mensagemErro.set(erro.mensagem);
           this.snackBar.open(erro.mensagem, 'Fechar', {
             duration: 6000,
             panelClass: erro.tipo === 'negocio' ? 'erro-negocio' : 'erro-sistema',

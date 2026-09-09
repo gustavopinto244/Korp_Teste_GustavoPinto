@@ -1,43 +1,79 @@
-<div class="nota-detalhe">
+<div class="korp-pagina korp-pagina--estreita nota-detalhe">
   @if (carregando()) {
-    <div class="nota-detalhe__carregando">
+    <div class="korp-carregando">
       <mat-spinner diameter="32" />
+      <p>Carregando nota fiscal…</p>
     </div>
   } @else if (nota(); as n) {
-    <header class="nota-detalhe__cabecalho">
-      <h1>Nota fiscal #{{ n.numero }}</h1>
-      <mat-chip [class.nota-detalhe__chip--aberta]="n.status === 'Aberta'"
-                [class.nota-detalhe__chip--fechada]="n.status === 'Fechada'">
+    @if (impressaAgora()) {
+      <div class="nota-detalhe__banner-sucesso" role="status">
+        <mat-icon>check_circle</mat-icon>
+        <div>
+          <p class="nota-detalhe__banner-sucesso-titulo">Nota impressa com sucesso</p>
+          <p class="nota-detalhe__banner-sucesso-texto">
+            O status foi atualizado para Fechada e o saldo dos produtos abaixo já foi
+            debitado.
+          </p>
+        </div>
+      </div>
+    }
+
+    <header class="korp-cabecalho">
+      <div class="korp-cabecalho__titulo">
+        <h1>Nota fiscal #{{ n.numero }}</h1>
+        <p class="korp-cabecalho__subtitulo">
+          @if (n.fechadoEm) {
+            Fechada em {{ n.fechadoEm | date: 'dd/MM/yyyy \'às\' HH:mm' }}
+          } @else {
+            Nota aberta — pronta para conferência e impressão
+          }
+        </p>
+      </div>
+      <mat-chip
+        class="korp-status"
+        [class.korp-status--aberta]="n.status === 'Aberta'"
+        [class.korp-status--fechada]="n.status === 'Fechada'"
+      >
+        <mat-icon matChipAvatar>{{ n.status === 'Aberta' ? 'lock_open' : 'lock' }}</mat-icon>
         {{ n.status }}
       </mat-chip>
     </header>
 
-    @if (n.fechadoEm) {
-      <p class="nota-detalhe__fechado-em">Fechada em {{ n.fechadoEm | date: 'dd/MM/yyyy HH:mm' }}</p>
-    }
+    <section class="korp-tabela-card nota-detalhe__itens">
+      <table mat-table [dataSource]="n.itens">
+        <ng-container matColumnDef="produtoCodigo">
+          <th mat-header-cell *matHeaderCellDef>Código</th>
+          <td mat-cell *matCellDef="let item">{{ item.produtoCodigo }}</td>
+        </ng-container>
 
-    <table mat-table [dataSource]="n.itens" class="mat-elevation-z1">
-      <ng-container matColumnDef="produtoCodigo">
-        <th mat-header-cell *matHeaderCellDef>Código</th>
-        <td mat-cell *matCellDef="let item">{{ item.produtoCodigo }}</td>
-      </ng-container>
+        <ng-container matColumnDef="produtoDescricao">
+          <th mat-header-cell *matHeaderCellDef>Descrição</th>
+          <td mat-cell *matCellDef="let item">{{ item.produtoDescricao }}</td>
+        </ng-container>
 
-      <ng-container matColumnDef="produtoDescricao">
-        <th mat-header-cell *matHeaderCellDef>Descrição</th>
-        <td mat-cell *matCellDef="let item">{{ item.produtoDescricao }}</td>
-      </ng-container>
+        <ng-container matColumnDef="quantidade">
+          <th mat-header-cell *matHeaderCellDef class="nota-detalhe__col-qtd">Quantidade</th>
+          <td mat-cell *matCellDef="let item" class="nota-detalhe__col-qtd">
+            {{ item.quantidade }}
+          </td>
+        </ng-container>
 
-      <ng-container matColumnDef="quantidade">
-        <th mat-header-cell *matHeaderCellDef>Quantidade</th>
-        <td mat-cell *matCellDef="let item">{{ item.quantidade }}</td>
-      </ng-container>
+        <tr mat-header-row *matHeaderRowDef="colunas"></tr>
+        <tr mat-row *matRowDef="let row; columns: colunas"></tr>
+      </table>
+    </section>
 
-      <tr mat-header-row *matHeaderRowDef="colunas"></tr>
-      <tr mat-row *matRowDef="let row; columns: colunas"></tr>
-    </table>
-
-    <div class="nota-detalhe__acoes">
+    <section class="korp-card nota-detalhe__acao">
+      <div class="nota-detalhe__acao-texto">
+        <mat-icon>print</mat-icon>
+        <div>
+          <p class="nota-detalhe__acao-titulo">Impressão</p>
+          <p class="nota-detalhe__acao-subtitulo">
+            Fecha a nota e debita o saldo dos produtos acima. Não pode ser desfeita.
+          </p>
+        </div>
+      </div>
       <app-botao-imprimir [nota]="n" (notaAtualizada)="aoAtualizarNota($event)" />
-    </div>
+    </section>
   }
 </div>

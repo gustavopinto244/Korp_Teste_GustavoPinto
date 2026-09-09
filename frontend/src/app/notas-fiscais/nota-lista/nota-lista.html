@@ -1,6 +1,9 @@
-<div class="nota-lista">
-  <header class="nota-lista__cabecalho">
-    <h1>Notas fiscais</h1>
+<div class="korp-pagina nota-lista">
+  <header class="korp-cabecalho">
+    <div class="korp-cabecalho__titulo">
+      <h1>Notas fiscais</h1>
+      <p class="korp-cabecalho__subtitulo">Emissão e acompanhamento de notas.</p>
+    </div>
     <a mat-flat-button color="primary" routerLink="/notas/nova">
       <mat-icon>add</mat-icon>
       Nova nota
@@ -8,44 +11,66 @@
   </header>
 
   @if (carregando()) {
-    <div class="nota-lista__carregando">
+    <div class="korp-carregando">
       <mat-spinner diameter="32" />
+      <p>Carregando notas…</p>
+    </div>
+  } @else if (notas().length === 0) {
+    <div class="korp-card korp-estado-vazio">
+      <mat-icon>description</mat-icon>
+      <p class="korp-estado-vazio__titulo">Nenhuma nota emitida</p>
+      <p class="korp-estado-vazio__texto">
+        Emita a primeira nota fiscal para vê-la listada aqui.
+      </p>
+      <a mat-flat-button color="primary" routerLink="/notas/nova">
+        <mat-icon>add</mat-icon>
+        Emitir nota
+      </a>
     </div>
   } @else {
-    <table mat-table [dataSource]="notas()" class="mat-elevation-z1">
-      <ng-container matColumnDef="numero">
-        <th mat-header-cell *matHeaderCellDef>Número</th>
-        <td mat-cell *matCellDef="let nota">{{ nota.numero }}</td>
-      </ng-container>
+    <div class="korp-tabela-card">
+      <table mat-table [dataSource]="notas()">
+        <ng-container matColumnDef="numero">
+          <th mat-header-cell *matHeaderCellDef>Número</th>
+          <td mat-cell *matCellDef="let nota">
+            <span class="nota-lista__numero">#{{ nota.numero }}</span>
+          </td>
+        </ng-container>
 
-      <ng-container matColumnDef="status">
-        <th mat-header-cell *matHeaderCellDef>Status</th>
-        <td mat-cell *matCellDef="let nota">
-          <mat-chip [class.nota-lista__chip--aberta]="nota.status === 'Aberta'"
-                    [class.nota-lista__chip--fechada]="nota.status === 'Fechada'">
-            {{ nota.status }}
-          </mat-chip>
-        </td>
-      </ng-container>
+        <ng-container matColumnDef="status">
+          <th mat-header-cell *matHeaderCellDef>Status</th>
+          <td mat-cell *matCellDef="let nota">
+            <mat-chip
+              class="korp-status"
+              [class.korp-status--aberta]="nota.status === 'Aberta'"
+              [class.korp-status--fechada]="nota.status === 'Fechada'"
+            >
+              <mat-icon matChipAvatar>{{ nota.status === 'Aberta' ? 'lock_open' : 'lock' }}</mat-icon>
+              {{ nota.status }}
+            </mat-chip>
+          </td>
+        </ng-container>
 
-      <ng-container matColumnDef="fechadoEm">
-        <th mat-header-cell *matHeaderCellDef>Fechada em</th>
-        <td mat-cell *matCellDef="let nota">{{ nota.fechadoEm ? (nota.fechadoEm | date: 'dd/MM/yyyy HH:mm') : '-' }}</td>
-      </ng-container>
+        <ng-container matColumnDef="fechadoEm">
+          <th mat-header-cell *matHeaderCellDef>Fechada em</th>
+          <td mat-cell *matCellDef="let nota">
+            {{ nota.fechadoEm ? (nota.fechadoEm | date: 'dd/MM/yyyy HH:mm') : '—' }}
+          </td>
+        </ng-container>
 
-      <ng-container matColumnDef="acoes">
-        <th mat-header-cell *matHeaderCellDef></th>
-        <td mat-cell *matCellDef="let nota">
-          <a mat-button [routerLink]="['/notas', nota.id]">Ver detalhe</a>
-        </td>
-      </ng-container>
+        <ng-container matColumnDef="acoes">
+          <th mat-header-cell *matHeaderCellDef></th>
+          <td mat-cell *matCellDef="let nota" class="nota-lista__col-acoes">
+            <a mat-stroked-button [routerLink]="['/notas', nota.id]">
+              Ver detalhe
+              <mat-icon iconPositionEnd>arrow_forward</mat-icon>
+            </a>
+          </td>
+        </ng-container>
 
-      <tr mat-header-row *matHeaderRowDef="colunas"></tr>
-      <tr mat-row *matRowDef="let row; columns: colunas"></tr>
-    </table>
-
-    @if (notas().length === 0) {
-      <p class="nota-lista__vazio">Nenhuma nota cadastrada.</p>
-    }
+        <tr mat-header-row *matHeaderRowDef="colunas"></tr>
+        <tr mat-row *matRowDef="let row; columns: colunas"></tr>
+      </table>
+    </div>
   }
 </div>

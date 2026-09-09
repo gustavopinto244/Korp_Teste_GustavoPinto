@@ -173,9 +173,23 @@ func erroNegocioDoCorpoOuGenerico(status int, corpo []byte) error {
 // respostaRepetivel decide, a partir do status HTTP de uma resposta
 // recebida com sucesso na camada de transporte, se vale a pena tentar de
 // novo.
+//
+// 500 e 429 entram na lista porque repetir é seguro aqui: toda chamada que
+// altera saldo leva Idempotency-Key, então uma repetição que chegue depois
+// de a primeira ter sido aplicada devolve o replay em vez de debitar duas
+// vezes. Sem eles, um pico momentâneo no banco do estoque (500) ou um
+// limite de taxa (429) derrubava a impressão na primeira tentativa, com as
+// outras duas sobrando sem uso.
+//
+// Erros de negócio (4xx que não 429) continuam fora: repetir "saldo
+// insuficiente" só gasta tempo do usuário para receber a mesma resposta.
 func respostaRepetivel(status int) bool {
 	switch status {
-	case http.StatusBadGateway, http.StatusServiceUnavailable, http.StatusGatewayTimeout:
+	case http.StatusInternalServerError,
+		http.StatusBadGateway,
+		http.StatusServiceUnavailable,
+		http.StatusGatewayTimeout,
+		http.StatusTooManyRequests:
 		return true
 	default:
 		return false

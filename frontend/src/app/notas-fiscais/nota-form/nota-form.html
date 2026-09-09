@@ -1,7 +1,18 @@
-<div class="nota-form">
-  <h1>Nova nota fiscal</h1>
+<div class="korp-pagina korp-pagina--estreita nota-form">
+  <header class="korp-cabecalho">
+    <div class="korp-cabecalho__titulo">
+      <h1>Nova nota fiscal</h1>
+      <p class="korp-cabecalho__subtitulo">
+        Numeração e status são definidos pelo sistema ao salvar.
+      </p>
+    </div>
+  </header>
 
   <app-ia-sugestao (itensSugeridos)="aoReceberSugestoes($event)" />
+
+  <div class="nota-form__divisor">
+    <span>Itens da nota</span>
+  </div>
 
   <form [formGroup]="form" (ngSubmit)="salvar()" class="nota-form__form">
     <div formArrayName="itens" class="nota-form__itens">
@@ -29,23 +40,25 @@
 
           <mat-form-field appearance="outline" class="nota-form__campo-quantidade">
             <mat-label>Quantidade</mat-label>
-            <input matInput type="number" formControlName="quantidade" />
+            <input matInput type="number" min="1" formControlName="quantidade" />
           </mat-form-field>
 
           <button
             mat-icon-button
             type="button"
+            class="nota-form__remover"
             (click)="removerLinha(i)"
             [disabled]="itens.length === 1"
+            [matTooltip]="itens.length === 1 ? 'A nota precisa de ao menos um item' : 'Remover item'"
             aria-label="Remover item"
           >
-            <mat-icon>delete</mat-icon>
+            <mat-icon>delete_outline</mat-icon>
           </button>
         </div>
       }
     </div>
 
-    <button mat-stroked-button type="button" (click)="adicionarLinha()">
+    <button mat-stroked-button type="button" class="nota-form__adicionar" (click)="adicionarLinha()">
       <mat-icon>add</mat-icon>
       Adicionar item
     </button>
@@ -53,7 +66,14 @@
     <div class="nota-form__acoes">
       <button mat-button type="button" (click)="cancelar()">Cancelar</button>
       <button mat-flat-button color="primary" type="submit" [disabled]="salvando()">
-        Salvar nota
+        @if (salvando()) {
+          <ng-container>
+            <mat-spinner diameter="18" />
+            Salvando…
+          </ng-container>
+        } @else {
+          Salvar nota
+        }
       </button>
     </div>
   </form>

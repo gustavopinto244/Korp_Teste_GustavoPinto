@@ -61,8 +61,8 @@ func TestAplicar_EIdempotente(t *testing.T) {
 	if err := pool.QueryRow(ctx, "SELECT count(*) FROM schema_migrations").Scan(&totalMigrations); err != nil {
 		t.Fatalf("consultar schema_migrations: %v", err)
 	}
-	if totalMigrations != 3 {
-		t.Fatalf("esperava 3 migrations registradas, obteve %d", totalMigrations)
+	if esperado := len(nomesDeMigration(t)); totalMigrations != esperado {
+		t.Fatalf("esperava %d migrations registradas, obteve %d", esperado, totalMigrations)
 	}
 }
 
@@ -187,8 +187,8 @@ func TestAplicar_AdotaControleLegado(t *testing.T) {
 	if err := pool.QueryRow(ctx, "SELECT count(*) FROM schema_migrations").Scan(&totalMigrations); err != nil {
 		t.Fatalf("consultar schema_migrations após adoção: %v", err)
 	}
-	if totalMigrations != 3 {
-		t.Fatalf("esperava 3 migrations adotadas, obteve %d", totalMigrations)
+	if esperado := len(arquivos); totalMigrations != esperado {
+		t.Fatalf("esperava %d migrations adotadas, obteve %d", esperado, totalMigrations)
 	}
 
 	// E os dados de produção do schema seguem lá, sem reaplicação de seed.

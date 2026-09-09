@@ -9,9 +9,9 @@ import (
 
 func catalogoDeTeste() []ia.CatalogoItem {
 	return []ia.CatalogoItem{
-		{Codigo: "PARAF-001", Descricao: "Parafuso sextavado M6"},
-		{Codigo: "MART-002", Descricao: "Martelo de borracha"},
-		{Codigo: "DISC-003", Descricao: "Disco de corte"},
+		{Codigo: "PARAF-001", Descricao: "Parafuso sextavado M6", SaldoDisponivel: 100},
+		{Codigo: "MART-002", Descricao: "Martelo de borracha", SaldoDisponivel: 30},
+		{Codigo: "DISC-003", Descricao: "Disco de corte", SaldoDisponivel: 50},
 	}
 }
 
@@ -125,5 +125,22 @@ func TestInterpretadorMock_SemQuantidadeVaiParaNaoReconhecidos(t *testing.T) {
 	}
 	if len(resultado.ItensNaoReconhecidos) != 1 {
 		t.Fatalf("esperava 1 item não reconhecido, obteve %+v", resultado.ItensNaoReconhecidos)
+	}
+}
+
+// TestInterpretadorMock_RecusaQuantidadeAcimaDoSaldo garante que o teto de
+// saldo vale nos dois providers: a tela não pode se comportar de um jeito
+// com IA_PROVIDER=mock e de outro com claude.
+func TestInterpretadorMock_RecusaQuantidadeAcimaDoSaldo(t *testing.T) {
+	interpretador := ia.NovoInterpretadorMock()
+	resultado, err := interpretador.Interpretar(context.Background(), "500 martelos de borracha", catalogoDeTeste())
+	if err != nil {
+		t.Fatalf("erro inesperado: %v", err)
+	}
+	if len(resultado.ItensSugeridos) != 0 {
+		t.Fatalf("não esperava sugestão acima do saldo: %+v", resultado.ItensSugeridos)
+	}
+	if len(resultado.ItensNaoReconhecidos) != 1 {
+		t.Fatalf("esperava o item recusado com motivo: %+v", resultado.ItensNaoReconhecidos)
 	}
 }

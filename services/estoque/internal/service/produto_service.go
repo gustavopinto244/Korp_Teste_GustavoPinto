@@ -18,8 +18,8 @@ type ProdutoRepositorio interface {
 	Criar(ctx context.Context, codigo, descricao string, saldo int) (*domain.Produto, error)
 	Listar(ctx context.Context) ([]domain.Produto, error)
 	BuscarPorCodigo(ctx context.Context, codigo string) (*domain.Produto, error)
-	Atualizar(ctx context.Context, codigo, descricao string, saldo int) (*domain.Produto, error)
-	Remover(ctx context.Context, codigo string) error
+	Atualizar(ctx context.Context, codigo, descricao string, saldo int, saldoEsperado *int) (*domain.Produto, error)
+	Desativar(ctx context.Context, codigo string) error
 }
 
 // ProdutoService implementa os casos de uso de cadastro de produto.
@@ -79,7 +79,12 @@ func (s *ProdutoService) BuscarPorCodigo(ctx context.Context, codigo string) (*d
 }
 
 // Atualizar valida e atualiza descrição/saldo de um produto existente.
-func (s *ProdutoService) Atualizar(ctx context.Context, codigo, descricao string, saldo int) (*domain.Produto, error) {
+//
+// saldoEsperado é opcional: quando informado, a atualização só se aplica se
+// o saldo corrente ainda for aquele, o que impede um formulário aberto há
+// algum tempo de desfazer o débito de uma impressão. Ver
+// ProdutoRepository.Atualizar.
+func (s *ProdutoService) Atualizar(ctx context.Context, codigo, descricao string, saldo int, saldoEsperado *int) (*domain.Produto, error) {
 	if err := validarDescricao(descricao); err != nil {
 		return nil, err
 	}
@@ -87,10 +92,13 @@ func (s *ProdutoService) Atualizar(ctx context.Context, codigo, descricao string
 		return nil, err
 	}
 
-	return s.repo.Atualizar(ctx, codigo, descricao, saldo)
+	return s.repo.Atualizar(ctx, codigo, descricao, saldo, saldoEsperado)
 }
 
-// Remover exclui um produto pelo código.
+// Remover exclui um produto do catálogo. A exclusão é lógica: o produto
+// deixa de aparecer em GET /produtos, mas continua existindo para as notas
+// fiscais que já o referenciam — inclusive para a baixa de saldo na
+// impressão delas. Ver ProdutoRepository.Desativar.
 func (s *ProdutoService) Remover(ctx context.Context, codigo string) error {
-	return s.repo.Remover(ctx, codigo)
+	return s.repo.Desativar(ctx, codigo)
 }

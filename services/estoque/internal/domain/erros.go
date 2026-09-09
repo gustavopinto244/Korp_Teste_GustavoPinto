@@ -27,6 +27,30 @@ var ErrChaveIdempotenciaConflitante = errors.New("chave de idempotência já usa
 // obrigatório não foi enviado na requisição de baixa.
 var ErrChaveIdempotenciaAusente = errors.New("header Idempotency-Key é obrigatório")
 
+// ErrSaldoDesatualizado é retornado quando uma atualização de produto informa
+// o saldo que esperava encontrar e ele já não é o corrente — sinal de que
+// alguma baixa foi aplicada entre a leitura da tela e o salvamento. Aplicar
+// a escrita nesse caso desfaria o débito de uma nota já impressa.
+type ErrSaldoDesatualizado struct {
+	Codigo   string
+	Esperado int
+	Atual    int
+}
+
+func (e *ErrSaldoDesatualizado) Error() string {
+	return fmt.Sprintf(
+		"O saldo do produto %s mudou enquanto você editava (esperado: %d, atual: %d). Recarregue antes de salvar.",
+		e.Codigo, e.Esperado, e.Atual,
+	)
+}
+
+// Is permite errors.Is/As idiomático mesmo com valores variáveis por
+// instância, comparando apenas o tipo.
+func (e *ErrSaldoDesatualizado) Is(target error) bool {
+	_, ok := target.(*ErrSaldoDesatualizado)
+	return ok
+}
+
 // ErrSaldoInsuficiente é retornado quando uma baixa solicita mais unidades
 // de um produto do que o saldo disponível. Carrega os dados necessários
 // para montar a mensagem de erro exigida pelo contrato (código do produto,

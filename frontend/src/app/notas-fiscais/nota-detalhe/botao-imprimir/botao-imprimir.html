@@ -1,15 +1,40 @@
-<button
-  mat-flat-button
-  color="primary"
-  [disabled]="desabilitado"
-  [matTooltip]="tooltip ?? ''"
-  [matTooltipDisabled]="!tooltip"
-  (click)="imprimir()"
->
-  @if (estado() === 'processando') {
-    <mat-spinner diameter="18" />
-    Imprimindo...
-  } @else {
-    Imprimir
+<div class="botao-imprimir">
+  <button
+    mat-flat-button
+    color="primary"
+    class="botao-imprimir__botao"
+    [disabled]="desabilitado"
+    [matTooltip]="tooltip ?? ''"
+    [matTooltipDisabled]="!tooltip"
+    (click)="imprimir()"
+  >
+    @if (estado() === 'processando') {
+      <ng-container>
+        <mat-spinner diameter="20" />
+        Imprimindo…
+      </ng-container>
+    } @else if (nota.status === 'Fechada') {
+      <ng-container>
+        <mat-icon>lock</mat-icon>
+        Nota fechada
+      </ng-container>
+    } @else {
+      <ng-container>
+        <mat-icon>print</mat-icon>
+        Imprimir
+      </ng-container>
+    }
+  </button>
+
+  @if (tooltip) {
+    <p class="botao-imprimir__dica">
+      <mat-icon class="botao-imprimir__icone-linha">info</mat-icon>
+      {{ tooltip }}
+    </p>
+  } @else if (mensagemErro()) {
+    <p class="botao-imprimir__erro" role="alert">
+      <mat-icon class="botao-imprimir__icone-linha">error_outline</mat-icon>
+      {{ mensagemErro() }} A nota continua Aberta — tente novamente.
+    </p>
   }
-</button>
+</div>

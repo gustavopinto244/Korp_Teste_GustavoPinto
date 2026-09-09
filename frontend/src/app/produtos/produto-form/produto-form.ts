@@ -31,6 +31,9 @@ export class ProdutoForm implements OnInit {
   protected readonly salvando = signal(false);
   protected readonly carregando = signal(false);
   protected readonly modoEdicao = signal(false);
+  // O saldo que veio do backend ao abrir o formulário, enviado de volta no
+  // salvamento para o estoque detectar se ele mudou nesse meio-tempo.
+  private readonly saldoCarregado = signal<number | null>(null);
 
   protected readonly form = this.fb.nonNullable.group({
     codigo: ['', Validators.required],
@@ -50,6 +53,7 @@ export class ProdutoForm implements OnInit {
     this.produtoService.obter(codigo).subscribe({
       next: (produto) => {
         this.form.patchValue(produto);
+        this.saldoCarregado.set(produto.saldo);
         this.carregando.set(false);
       },
       error: (erro: ErroApi) => {
@@ -72,6 +76,7 @@ export class ProdutoForm implements OnInit {
       ? this.produtoService.atualizar(valor.codigo, {
           descricao: valor.descricao,
           saldo: valor.saldo,
+          saldoEsperado: this.saldoCarregado() ?? undefined,
         })
       : this.produtoService.criar(valor);
 

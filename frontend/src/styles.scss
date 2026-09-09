@@ -17,6 +17,18 @@ html {
       density: 0,
     )
   );
+
+  // Tokens de identidade visual reutilizados pelos componentes de tela.
+  // Ficam aqui (fora do orçamento de estilo por componente) porque são
+  // compartilhados por todas as telas, não específicos de uma delas.
+  --korp-radius-md: 12px;
+  --korp-radius-lg: 16px;
+  --korp-shadow-1: 0 1px 2px rgba(15, 23, 42, 0.06), 0 1px 3px rgba(15, 23, 42, 0.08);
+  --korp-shadow-2: 0 4px 12px rgba(15, 23, 42, 0.1), 0 2px 4px rgba(15, 23, 42, 0.06);
+  --korp-status-aberta-bg: #dcf5e3;
+  --korp-status-aberta-fg: #1a6b34;
+  --korp-status-fechada-bg: #e6e9f0;
+  --korp-status-fechada-fg: #4a5468;
 }
 
 body {
@@ -36,7 +48,142 @@ body {
   margin: 0;
   height: 100%;
 }
+
 /* You can add global styles to this file, and also import other style files */
+
+// Foco visível em qualquer elemento navegável por teclado — acessibilidade
+// básica que o Material já respeita nos seus próprios componentes, mas que
+// vale reforçar para links/cards customizados desta aplicação.
+a:focus-visible,
+button:focus-visible,
+.korp-card--clicavel:focus-visible {
+  outline: 2px solid var(--mat-sys-primary);
+  outline-offset: 2px;
+}
+
+// --- Layout de página compartilhado entre as cinco telas -----------------
+// Em vez de um componente Angular de "shell", isto fica em classes globais
+// porque é puramente apresentacional (sem estado, sem lógica) — um
+// componente só para isso seria cerimônia.
+
+.korp-pagina {
+  max-width: 1120px;
+  margin: 0 auto;
+  padding: 2rem 2rem 3rem;
+  box-sizing: border-box;
+}
+
+.korp-pagina--estreita {
+  max-width: 720px;
+}
+
+.korp-cabecalho {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 1.75rem;
+  flex-wrap: wrap;
+
+  &__titulo {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+  }
+
+  h1 {
+    margin: 0;
+    font: var(--mat-sys-headline-medium);
+    color: var(--mat-sys-on-surface);
+  }
+
+  &__subtitulo {
+    margin: 0;
+    color: var(--mat-sys-on-surface-variant);
+    font: var(--mat-sys-body-medium);
+  }
+}
+
+.korp-card {
+  background: var(--mat-sys-surface-container-low);
+  border-radius: var(--korp-radius-lg);
+  box-shadow: var(--korp-shadow-1);
+  border: 1px solid var(--mat-sys-outline-variant);
+}
+
+.korp-tabela-card {
+  @extend .korp-card;
+  overflow: hidden;
+
+  table {
+    width: 100%;
+  }
+
+  th.mat-mdc-header-cell {
+    font-weight: 600;
+    color: var(--mat-sys-on-surface-variant);
+    background: var(--mat-sys-surface-container);
+  }
+
+  tr.mat-mdc-row:hover {
+    background: var(--mat-sys-surface-container);
+  }
+}
+
+.korp-estado-vazio {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 3.5rem 1.5rem;
+  text-align: center;
+  color: var(--mat-sys-on-surface-variant);
+
+  mat-icon {
+    font-size: 40px;
+    width: 40px;
+    height: 40px;
+    opacity: 0.55;
+  }
+
+  &__titulo {
+    margin: 0;
+    font-weight: 500;
+    color: var(--mat-sys-on-surface);
+  }
+
+  &__texto {
+    margin: 0;
+    max-width: 32ch;
+  }
+}
+
+.korp-carregando {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.75rem;
+  padding: 3.5rem 1.5rem;
+  color: var(--mat-sys-on-surface-variant);
+}
+
+// Pílulas de status (nota Aberta/Fechada), sobrepondo a cor padrão do
+// mat-chip para reforçar a identidade visual sem trocar de componente.
+.korp-status {
+  font-weight: 600;
+  letter-spacing: 0.01em;
+
+  &--aberta {
+    background-color: var(--korp-status-aberta-bg) !important;
+    color: var(--korp-status-aberta-fg) !important;
+  }
+
+  &--fechada {
+    background-color: var(--korp-status-fechada-bg) !important;
+    color: var(--korp-status-fechada-fg) !important;
+  }
+}
 
 // Diferenciação visual de snackbars de erro por tipo (contrato único de erro
 // da API): "negocio" é algo que o usuário pode resolver, "sistema" é uma
