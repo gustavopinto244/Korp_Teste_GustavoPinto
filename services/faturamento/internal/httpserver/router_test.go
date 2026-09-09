@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"strconv"
 	"testing"
+	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
@@ -31,7 +32,7 @@ func montarRouterDeTeste(t *testing.T, baseURLEstoque string) (*http.ServeMux, *
 
 	notaHandler := handler.NovoNotaHandler(notaService)
 	imprimirHandler := handler.NovoImprimirHandler(imprimirService)
-	interpretarHandler := handler.NovoInterpretarHandler(cliente, ia.NovoInterpretadorMock())
+	interpretarHandler := handler.NovoInterpretarHandler(cliente, ia.NovoInterpretadorMock(), 5*time.Second)
 
 	return httpserver.NovoRouter(pool, notaHandler, imprimirHandler, interpretarHandler), pool
 }

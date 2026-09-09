@@ -3,6 +3,7 @@ package handler
 import (
 	"context"
 	"encoding/json"
+	"log"
 	"net/http"
 	"strings"
 	"time"
@@ -28,9 +29,11 @@ type InterpretarHandler struct {
 	timeout       time.Duration
 }
 
-// NovoInterpretarHandler constrói um InterpretarHandler.
-func NovoInterpretarHandler(catalogo CatalogoFornecedor, interpretador ia.InterpretadorDeTexto) *InterpretarHandler {
-	return &InterpretarHandler{catalogo: catalogo, interpretador: interpretador, timeout: 5 * time.Second}
+// NovoInterpretarHandler constrói um InterpretarHandler. O timeout cobre a
+// consulta ao catálogo e a interpretação inteira; ele varia com o provider
+// de IA configurado, por isso vem de fora (ver cmd/api/main.go).
+func NovoInterpretarHandler(catalogo CatalogoFornecedor, interpretador ia.InterpretadorDeTexto, timeout time.Duration) *InterpretarHandler {
+	return &InterpretarHandler{catalogo: catalogo, interpretador: interpretador, timeout: timeout}
 }
 
 type interpretarRequest struct {
@@ -61,9 +64,12 @@ func (h *InterpretarHandler) Interpretar(w http.ResponseWriter, r *http.Request)
 
 	resultado, err := h.interpretador.Interpretar(ctx, req.Texto, catalogo)
 	if err != nil {
-		// nunca deixa a falha do interpretador (inclusive o stub do Claude
-		// sem implementação) derrubar o restante do sistema — é só apoio
-		// opcional à criação manual de nota.
+		// Nunca deixa a falha do interpretador derrubar o restante do
+		// sistema — a IA é só apoio opcional à criação manual de nota. O
+		// usuário recebe 503 e continua cadastrando os itens à mão; o
+		// motivo real fica no log do serviço, já que a resposta não o
+		// carrega.
+		log.Printf("faturamento: interpretação por IA indisponível: %v", err)
 		apierror.EscreverErro(w, domain.ErrIAIndisponivel)
 		return
 	}

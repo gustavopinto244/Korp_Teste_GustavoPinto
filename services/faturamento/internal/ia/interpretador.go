@@ -1,10 +1,15 @@
-// Package ia contém o ponto de extensão de interpretação de texto livre
-// usado pelo endpoint POST /notas/interpretar. A implementação ativa nesta
-// rodada é um mock determinístico (ver mock_interpretador.go) — não é um
-// modelo de linguagem real.
+// Package ia contém a interpretação de texto livre usada pelo endpoint
+// POST /notas/interpretar. Duas implementações atendem a mesma interface: a
+// integração real com a API da Anthropic (claude_interpretador.go, ativada
+// por IA_PROVIDER=claude com IA_API_KEY) e uma heurística determinística
+// local (mock_interpretador.go), que é o padrão e não é um modelo de
+// linguagem.
 package ia
 
-import "context"
+import (
+	"context"
+	"strings"
+)
 
 // CatalogoItem é a projeção mínima do catálogo de produtos do estoque
 // necessária para a interpretação: código e descrição.
@@ -46,12 +51,19 @@ type InterpretadorDeTexto interface {
 // NovoInterpretador escolhe a implementação de InterpretadorDeTexto pela
 // variável de ambiente IA_PROVIDER ("mock" ou "claude"). Qualquer valor
 // desconhecido ou vazio cai no mock determinístico, para nunca deixar o
-// endpoint sem implementação.
-func NovoInterpretador(provider, apiKey string) InterpretadorDeTexto {
-	switch provider {
-	case "claude":
-		return NovoInterpretadorClaude(apiKey)
-	default:
-		return NovoInterpretadorMock()
+// endpoint sem implementação — inclusive quando IA_PROVIDER=claude vem sem
+// IA_API_KEY, caso em que toda chamada falharia com erro de autenticação.
+func NovoInterpretador(provider, apiKey, modelo string) InterpretadorDeTexto {
+	if UsaProvedorRemoto(provider, apiKey) {
+		return NovoInterpretadorClaude(apiKey, modelo)
 	}
+	return NovoInterpretadorMock()
+}
+
+// UsaProvedorRemoto informa se a configuração resulta em chamadas de rede a
+// um modelo. Quem monta o servidor precisa saber: a heurística local
+// responde em microssegundos, uma chamada ao modelo leva segundos, e os
+// timeouts do endpoint dependem disso.
+func UsaProvedorRemoto(provider, apiKey string) bool {
+	return provider == "claude" && strings.TrimSpace(apiKey) != ""
 }

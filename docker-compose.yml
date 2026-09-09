@@ -48,6 +48,7 @@ services:
       ESTOQUE_BASE_URL: http://estoque:8081
       IA_PROVIDER: ${IA_PROVIDER:-mock}
       IA_API_KEY: ${IA_API_KEY:-}
+      IA_MODEL: ${IA_MODEL:-}
     ports:
       - "${FATURAMENTO_PORT:-8082}:8082"
 

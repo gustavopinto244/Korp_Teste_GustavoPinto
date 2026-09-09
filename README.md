@@ -154,10 +154,30 @@ política de resiliência): [`docs/plano-tecnico.md`](docs/plano-tecnico.md).
 ## Funcionalidade de IA
 
 `POST /notas/interpretar` aceita texto livre ("3 parafusos e 2 martelos") e
-devolve itens estruturados validados contra o catálogo real. Nesta versão a
-interpretação usa um **mock determinístico por heurística de texto** (não é
-um modelo de linguagem) atrás da interface `InterpretadorDeTexto` — ver
-`services/faturamento/internal/ia/`. Para plugar um provedor real, defina
-`IA_PROVIDER=claude` e `IA_API_KEY` no `.env` e implemente
-`internal/ia/claude_interpretador.go` (o ponto de extensão já existe, hoje
-retorna erro explícito de "não implementado").
+devolve itens estruturados validados contra o catálogo real, para o usuário
+conferir antes de gravar a nota. Duas implementações atendem a mesma
+interface `InterpretadorDeTexto` (`services/faturamento/internal/ia/`),
+escolhidas por `IA_PROVIDER`:
+
+| `IA_PROVIDER` | O que roda |
+| --- | --- |
+| `mock` (padrão) | heurística determinística local por casamento de texto — **não** é um modelo de linguagem |
+| `claude` | Messages API da Anthropic pelo SDK oficial, com saída estruturada por *tool use* |
+
+Para ligar a IA real, no `.env`:
+
+```bash
+IA_PROVIDER=claude
+IA_API_KEY=sk-ant-...        # nunca comite esta chave; .env está no .gitignore
+IA_MODEL=                    # opcional; vazio = claude-opus-5
+```
+
+Sem `IA_API_KEY` o serviço cai no mock de propósito, em vez de falhar em toda
+requisição. Em qualquer falha do provedor — timeout, erro de rede, resposta
+inesperada — o endpoint responde `503 IA_INDISPONIVEL`, registra o motivo no
+log e a tela segue funcionando para cadastro manual: a IA é apoio, nunca
+caminho obrigatório.
+
+Um código de produto que o modelo invente nunca chega à tela: a resposta é
+conciliada contra o catálogo vindo do estoque, e o que não casa vira "item
+não reconhecido".

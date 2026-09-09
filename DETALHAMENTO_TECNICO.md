@@ -106,15 +106,17 @@ status da nota como `mat-chip` colorido.
 
 Go Modules padrão (`go.mod`/`go.sum`), um módulo por microsserviço — não há
 módulo compartilhado entre `estoque` e `faturamento`, para manter cada um
-deployável isoladamente. Cada serviço tem **uma única dependência direta**:
+deployável isoladamente. As dependências diretas são poucas e nomeadas uma a
+uma:
 
-```
-github.com/jackc/pgx/v5 v5.11.0
-```
+| Serviço | Dependência direta | Para quê |
+| --- | --- | --- |
+| estoque | `github.com/jackc/pgx/v5` | driver e pool do PostgreSQL |
+| faturamento | `github.com/jackc/pgx/v5` | driver e pool do PostgreSQL |
+| faturamento | `github.com/anthropics/anthropic-sdk-go` | SDK oficial da Messages API, usado pela interpretação de texto por IA |
 
-As demais entradas do `go.mod` (`pgpassfile`, `pgservicefile`, `puddle/v2`,
-`golang.org/x/sync`, `golang.org/x/text`) estão marcadas `// indirect`: são
-transitivas do próprio `pgx`, não escolhas do projeto. Deliberadamente não
+Todas as demais entradas do `go.mod` estão marcadas `// indirect`: são
+transitivas dessas duas, não escolhas do projeto. Deliberadamente não
 foram adicionadas bibliotecas de migration (`golang-migrate`), retry ou
 circuit breaker (`sony/gobreaker`, `sethvargo/go-retry`) — essas três peças
 foram implementadas à mão (`internal/migrate`, `internal/estoqueclient/retry.go`,
@@ -128,8 +130,8 @@ biblioteca padrão, com `http.ServeMux` (Go 1.22+, que já roteia por método
 HTTP e path, ex. `mux.HandleFunc("POST /produtos/baixa", ...)` em
 `internal/httpserver/router.go`). Decisão deliberada: o volume de rotas de
 cada serviço (meia dúzia de endpoints, incluindo `/health`) não justifica Gin,
-Echo ou Chi, e evitar um framework mantém o `go.mod` com a única dependência
-direta citada acima.
+Echo ou Chi, e evitar um framework mantém o `go.mod` no tamanho da tabela
+acima.
 
 ## Tratamento de erros e exceções no backend
 
@@ -216,7 +218,10 @@ descartável (`estoque_test`, `faturamento_test`) derivado do próprio DSN, sem
 tocar nos dados da demo nem numa tabela de controle compartilhada com o outro
 microsserviço. A suíte recusa rodar se o `search_path` não terminar em
 `_test`, já que ela derruba o schema inteiro antes de cada execução — ver
-[`README.md`](README.md#rodar-os-testes).
+[`README.md`](README.md#rodar-os-testes). Esse setup mora em um lugar só por
+serviço (`internal/testdb`), e os dois `internal/migrate/migrate.go` são
+mantidos idênticos: como os serviços são módulos Go independentes, a
+duplicação é deliberada, mas a divergência não.
 
 ## Requisitos obrigatórios — onde estão implementados
 
@@ -233,10 +238,45 @@ microsserviço. A suíte recusa rodar se o `search_path` não terminar em
 - **Idempotência** — chave determinística `impressao-nota-{id}`, tabela
   `idempotencia_baixa` no schema do estoque, replay exato em chave repetida
   (`services/estoque/internal/service/baixa_service.go`).
-- **Inteligência Artificial** — `POST /notas/interpretar`, mock determinístico
-  documentado como tal em `services/faturamento/internal/ia/mock_interpretador.go`,
-  com ponto de extensão para um provedor real em `claude_interpretador.go`.
+- **Inteligência Artificial** — `POST /notas/interpretar`, com duas
+  implementações da mesma interface: abaixo.
 - **Tratamento de concorrência** — abaixo.
+
+### Inteligência Artificial
+
+O usuário escreve o pedido como falaria ("3 parafusos sextavados e 2
+martelos") e recebe itens de nota já casados com o catálogo, para conferir
+antes de gravar. Nada é persistido pelo endpoint: ele preenche o formulário,
+o usuário confirma.
+
+`InterpretadorDeTexto` (`services/faturamento/internal/ia/interpretador.go`)
+tem duas implementações, escolhidas por `IA_PROVIDER`:
+
+| Provider | Implementação | Comportamento |
+| --- | --- | --- |
+| `claude` | `claude_interpretador.go` | Messages API da Anthropic via SDK oficial; exige `IA_API_KEY` |
+| `mock` (padrão) | `mock_interpretador.go` | heurística local determinística por regex e comparação de strings — **não** é um modelo de linguagem, e o nome do arquivo diz isso |
+
+Três decisões sustentam a integração real:
+
+1. **Saída estruturada por tool use, não por texto.** O modelo preenche os
+   argumentos de uma ferramenta cujo JSON Schema descreve exatamente o
+   contrato de resposta do endpoint, com `strict: true`. Não há parsing de
+   prosa nem prompt pedindo "responda em JSON".
+2. **O catálogo decide, o modelo apenas escolhe.** `conciliarComCatalogo`
+   descarta qualquer código que não esteja no catálogo real vindo do estoque,
+   rejeita quantidade não positiva e reescreve a descrição a partir do
+   catálogo. O prompt pede que o modelo não invente produtos; é o código que
+   garante. Cada uma dessas travas tem teste em `claude_interpretador_test.go`,
+   todos sem rede.
+3. **Degradação graciosa.** Falha do provedor, timeout, recusa do modelo ou
+   resposta sem chamada de ferramenta viram `503 IA_INDISPONIVEL` com o motivo
+   real no log do serviço; a tela segue funcionando para cadastro manual. E
+   `IA_PROVIDER=claude` sem `IA_API_KEY` cai no mock em vez de falhar em toda
+   requisição.
+
+O timeout do endpoint acompanha o provider (`cmd/api/main.go`): 5s para a
+heurística local, 25s quando a chamada atravessa a internet.
 
 ### Tratamento de concorrência
 
