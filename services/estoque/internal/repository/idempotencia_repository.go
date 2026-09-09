@@ -5,7 +5,17 @@ import (
 	"errors"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 )
+
+// ErrChaveJaRegistrada indica que a chave de idempotência foi gravada por
+// outra transação entre a nossa leitura e a nossa escrita. Não é falha de
+// infraestrutura: é a corrida normal de duas requisições idênticas
+// simultâneas, e o chamador a resolve reprocessando como replay.
+var ErrChaveJaRegistrada = errors.New("chave de idempotência já registrada")
+
+// codigoViolacaoUnicidade é o SQLSTATE de unique_violation no Postgres.
+const codigoViolacaoUnicidade = "23505"
 
 // RegistroIdempotencia é o resultado salvo de uma baixa já processada,
 // usado para replay exato quando a mesma chave de idempotência repetir.
@@ -48,12 +58,19 @@ func (r *IdempotenciaRepository) BuscarPorChaveTx(ctx context.Context, tx DBTX, 
 }
 
 // SalvarTx grava o resultado de uma baixa recém-processada, para permitir
-// replay em chamadas futuras com a mesma chave.
+// replay em chamadas futuras com a mesma chave. Devolve
+// ErrChaveJaRegistrada se outra transação tiver gravado a mesma chave
+// primeiro.
 func (r *IdempotenciaRepository) SalvarTx(ctx context.Context, tx DBTX, chave string, statusHTTP int, respostaJSON []byte) error {
 	_, err := tx.Exec(ctx, `
 		INSERT INTO idempotencia_baixa (chave, status_http, resposta_json)
 		VALUES ($1, $2, $3)`,
 		chave, statusHTTP, respostaJSON,
 	)
+
+	var erroPg *pgconn.PgError
+	if errors.As(err, &erroPg) && erroPg.Code == codigoViolacaoUnicidade {
+		return ErrChaveJaRegistrada
+	}
 	return err
 }

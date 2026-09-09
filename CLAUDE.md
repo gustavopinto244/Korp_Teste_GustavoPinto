@@ -121,12 +121,15 @@ que um ciclo de vida foi usado se ele não está no repositório.
 2. Tratamento de falhas — um serviço cai, o sistema se recupera e informa o usuário
 3. Conexão real com banco de dados — persistência física
 
-**Opcionais escolhidos** (o diferencial da entrega):
+**Opcionais escolhidos** (o diferencial da entrega) — os três:
 - **Idempotência** — clicar imprimir duas vezes não debita o estoque duas vezes
 - **Inteligência Artificial** — uma funcionalidade real do sistema usando IA
-
-**Opcional deliberadamente fora de escopo:** tratamento de concorrência.
-Não foi escolhido. Se sobrar tempo no fim, reavalie — mas não comece por ele.
+- **Tratamento de concorrência** — `SELECT ... FOR UPDATE` no saldo, locks
+  adquiridos em ordem alfabética de código (sem deadlock entre notas com os
+  mesmos produtos em ordem oposta) e chave de idempotência disputada tratada
+  como replay. Provado em `services/estoque/internal/service/concorrencia_test.go`,
+  contra Postgres real. Estava fora de escopo até que os testes de disputa
+  mostraram que faltava pouco — e que dois defeitos reais moravam ali.
 
 ---
 

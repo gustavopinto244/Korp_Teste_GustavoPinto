@@ -3,7 +3,9 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"sort"
 	"strings"
 
 	"github.com/gustavopinto244/korp-teste-gustavopinto/services/estoque/internal/domain"
@@ -92,11 +94,28 @@ func validarRequisicaoBaixa(req RequisicaoBaixa) error {
 // resultado salvo anteriormente sem debitar de novo (replay). Se chave já
 // tiver sido usada com um conjunto de itens diferente, devolve
 // domain.ErrChaveIdempotenciaConflitante.
+//
+// Duas requisições idênticas disparadas ao mesmo tempo (o duplo clique em
+// Imprimir) podem passar as duas pela checagem de idempotência antes de
+// qualquer commit. Nesse caso a perdedora recebe
+// repository.ErrChaveJaRegistrada ao gravar a chave e é reprocessada uma
+// vez: a vencedora já commitou, então a segunda passada encontra o registro
+// e devolve o mesmo replay que uma chamada sequencial devolveria. Sem isso a
+// perdedora respondia erro de banco (violação de unicidade) para o usuário.
 func (s *BaixaService) Processar(ctx context.Context, chave string, req RequisicaoBaixa) (*RespostaBaixa, error) {
 	if err := validarRequisicaoBaixa(req); err != nil {
 		return nil, err
 	}
 
+	resposta, err := s.processarUmaVez(ctx, chave, req)
+	if errors.Is(err, repository.ErrChaveJaRegistrada) {
+		return s.processarUmaVez(ctx, chave, req)
+	}
+	return resposta, err
+}
+
+// processarUmaVez é uma tentativa única da baixa, em uma transação.
+func (s *BaixaService) processarUmaVez(ctx context.Context, chave string, req RequisicaoBaixa) (*RespostaBaixa, error) {
 	pool := s.produtoRepo.Pool()
 
 	tx, err := pool.Begin(ctx)
@@ -130,21 +149,27 @@ func (s *BaixaService) Processar(ctx context.Context, chave string, req Requisic
 		return &respostaSalva, nil
 	}
 
+	// As linhas são travadas em ordem de código, e não na ordem em que o
+	// cliente mandou os itens. Duas notas com os mesmos produtos em ordem
+	// oposta travariam uma a linha que a outra espera — deadlock que o
+	// Postgres resolve abortando uma das transações. Ordem total única
+	// elimina o ciclo: as duas disputam as mesmas linhas na mesma sequência
+	// e uma apenas espera a outra.
 	produtosPorCodigo := make(map[string]*domain.Produto)
 	saldosCorrentes := make(map[string]int)
+
+	for _, codigo := range codigosOrdenados(req.Itens) {
+		produto, err := s.produtoRepo.BuscarPorCodigoParaAtualizarTx(ctx, tx, codigo)
+		if err != nil {
+			return nil, err
+		}
+		produtosPorCodigo[codigo] = produto
+		saldosCorrentes[codigo] = produto.Saldo
+	}
+
 	resultados := make([]ItemBaixaResultado, 0, len(req.Itens))
 
 	for _, item := range req.Itens {
-		produto, ja := produtosPorCodigo[item.Codigo]
-		if !ja {
-			produto, err = s.produtoRepo.BuscarPorCodigoParaAtualizarTx(ctx, tx, item.Codigo)
-			if err != nil {
-				return nil, err
-			}
-			produtosPorCodigo[item.Codigo] = produto
-			saldosCorrentes[item.Codigo] = produto.Saldo
-		}
-
 		saldoAnterior := saldosCorrentes[item.Codigo]
 		if saldoAnterior < item.Quantidade {
 			return nil, &domain.ErrSaldoInsuficiente{
@@ -186,6 +211,22 @@ func (s *BaixaService) Processar(ctx context.Context, chave string, req Requisic
 	}
 
 	return &resposta, nil
+}
+
+// codigosOrdenados devolve os códigos distintos dos itens em ordem
+// alfabética — a ordem em que as linhas de produto são travadas.
+func codigosOrdenados(itens []ItemBaixa) []string {
+	vistos := make(map[string]bool, len(itens))
+	codigos := make([]string, 0, len(itens))
+	for _, item := range itens {
+		if vistos[item.Codigo] {
+			continue
+		}
+		vistos[item.Codigo] = true
+		codigos = append(codigos, item.Codigo)
+	}
+	sort.Strings(codigos)
+	return codigos
 }
 
 // mesmosItens compara a lista de itens de uma nova requisição com os itens

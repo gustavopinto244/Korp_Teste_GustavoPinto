@@ -236,3 +236,42 @@ microsserviço. A suíte recusa rodar se o `search_path` não terminar em
 - **Inteligência Artificial** — `POST /notas/interpretar`, mock determinístico
   documentado como tal em `services/faturamento/internal/ia/mock_interpretador.go`,
   com ponto de extensão para um provedor real em `claude_interpretador.go`.
+- **Tratamento de concorrência** — abaixo.
+
+### Tratamento de concorrência
+
+O ponto de disputa do sistema é um só: o saldo de um produto, quando duas
+impressões o consomem ao mesmo tempo. Ele é resolvido no banco, dentro da
+transação da baixa (`services/estoque/internal/service/baixa_service.go`),
+com três mecanismos:
+
+1. **`SELECT ... FOR UPDATE` em cada produto** (`produto_repository.go`,
+   `BuscarPorCodigoParaAtualizarTx`). A leitura do saldo que decide se a
+   baixa cabe é a mesma leitura que trava a linha até o commit, então
+   nenhuma outra transação pode debitar aquele saldo no meio do caminho.
+   Isso elimina o *lost update* e mantém a invariante `saldo >= 0` — que o
+   banco ainda reforça por `CHECK`, como segunda linha de defesa.
+2. **Ordem total de aquisição dos locks.** As linhas são travadas em ordem
+   alfabética de código, não na ordem em que o cliente enviou os itens. Duas
+   notas com os mesmos produtos em ordem oposta travariam cada uma a linha
+   que a outra espera; o Postgres detecta o ciclo e aborta uma das
+   transações com `SQLSTATE 40P01`. Com ordem única não há ciclo: uma
+   transação apenas espera a outra.
+3. **Corrida na chave de idempotência.** Duas requisições idênticas
+   simultâneas podem passar as duas pela checagem de idempotência antes de
+   qualquer commit. A perdedora recebe violação de unicidade ao gravar a
+   chave (`repository.ErrChaveJaRegistrada`) e é reprocessada uma vez —
+   nessa segunda passada a vencedora já commitou, e ela devolve o mesmo
+   replay que uma chamada sequencial devolveria. Antes disso, o duplo clique
+   simultâneo em **Imprimir** respondia erro de banco ao usuário.
+
+Cada mecanismo tem um teste que falha sem ele, em
+`services/estoque/internal/service/concorrencia_test.go`, todos contra
+Postgres real com goroutines liberadas simultaneamente:
+
+| Teste | O que prova |
+| --- | --- |
+| `SaldoDisputadoNaoFicaNegativo` | saldo 1 disputado por 8 requisições → exatamente 1 vence, saldo final 0 |
+| `SemLostUpdate` | 10 baixas simultâneas com saldo sobrando → todas contabilizadas |
+| `MesmaChaveSimultanea` | 6 chamadas com a mesma chave → um único débito, nenhum erro |
+| `OrdemInvertidaNaoTravaEmDeadlock` | 12 baixas com listas em ordem oposta → nenhum deadlock |
