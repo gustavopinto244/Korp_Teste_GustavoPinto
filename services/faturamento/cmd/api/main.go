@@ -48,6 +48,7 @@ func executar() error {
 	iaProvider := comPadrao("IA_PROVIDER", "mock")
 	iaAPIKey := os.Getenv("IA_API_KEY")
 	iaModelo := os.Getenv("IA_MODEL")
+	iaBaseURL := os.Getenv("IA_BASE_URL")
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -69,7 +70,7 @@ func executar() error {
 
 	notaService := service.NovoNotaService(notaRepo, cliente)
 	imprimirService := service.NovoImprimirService(notaRepo, cliente)
-	interpretador := ia.NovoInterpretador(iaProvider, iaAPIKey, iaModelo)
+	interpretador := ia.NovoInterpretador(iaProvider, iaAPIKey, iaModelo, iaBaseURL)
 
 	// A heurística local responde em microssegundos; uma chamada ao modelo
 	// real atravessa a internet e leva segundos. Um único timeout serviria
@@ -78,7 +79,10 @@ func executar() error {
 	timeoutIA := timeoutIALocal
 	if ia.UsaProvedorRemoto(iaProvider, iaAPIKey) {
 		timeoutIA = timeoutIARemota
-		log.Printf("faturamento: interpretação de texto por %s (modelo %s)", iaProvider, primeiroNaoVazio(iaModelo, ia.ModeloPadrao))
+		log.Printf("faturamento: interpretação de texto por %s (modelo %s, endpoint %s)",
+			iaProvider,
+			primeiroNaoVazio(iaModelo, ia.ModeloPadrao),
+			primeiroNaoVazio(iaBaseURL, "api.anthropic.com"))
 	}
 
 	notaHandler := handler.NovoNotaHandler(notaService)

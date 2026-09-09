@@ -118,7 +118,7 @@ func TestConciliar_ListasNuncaSaoNulas(t *testing.T) {
 // produzir código inventado. O interpretador é construído com uma chave
 // falsa de propósito — se a rede fosse acionada, o teste falharia.
 func TestInterpretar_CatalogoVazioNaoChamaAPI(t *testing.T) {
-	interpretador := NovoInterpretadorClaude("chave-invalida-de-teste", "")
+	interpretador := NovoInterpretadorClaude("chave-invalida-de-teste", "", "")
 
 	resultado, err := interpretador.Interpretar(context.Background(), "3 parafusos", nil)
 	if err != nil {
@@ -170,7 +170,7 @@ func TestNovoInterpretador_SemChaveCaiNoMock(t *testing.T) {
 			t.Errorf("UsaProvedorRemoto(%q, %q) = %v, esperava %v", c.provider, c.apiKey, got, c.esperaRemoto)
 		}
 
-		_, remoto := NovoInterpretador(c.provider, c.apiKey, "").(*interpretadorClaude)
+		_, remoto := NovoInterpretador(c.provider, c.apiKey, "", "").(*interpretadorClaude)
 		if remoto != c.esperaRemoto {
 			t.Errorf("NovoInterpretador(%q, %q) devolveu remoto=%v, esperava %v", c.provider, c.apiKey, remoto, c.esperaRemoto)
 		}

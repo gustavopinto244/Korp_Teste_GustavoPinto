@@ -53,9 +53,9 @@ type InterpretadorDeTexto interface {
 // desconhecido ou vazio cai no mock determinístico, para nunca deixar o
 // endpoint sem implementação — inclusive quando IA_PROVIDER=claude vem sem
 // IA_API_KEY, caso em que toda chamada falharia com erro de autenticação.
-func NovoInterpretador(provider, apiKey, modelo string) InterpretadorDeTexto {
+func NovoInterpretador(provider, apiKey, modelo, baseURL string) InterpretadorDeTexto {
 	if UsaProvedorRemoto(provider, apiKey) {
-		return NovoInterpretadorClaude(apiKey, modelo)
+		return NovoInterpretadorClaude(apiKey, modelo, baseURL)
 	}
 	return NovoInterpretadorMock()
 }

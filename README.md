@@ -170,6 +170,18 @@ Para ligar a IA real, no `.env`:
 IA_PROVIDER=claude
 IA_API_KEY=sk-ant-...        # nunca comite esta chave; .env está no .gitignore
 IA_MODEL=                    # opcional; vazio = claude-opus-5
+IA_BASE_URL=                 # opcional; vazio = api.anthropic.com
+```
+
+A Messages API tem implementações compatíveis além da própria Anthropic. Para
+usar um gateway (OpenRouter, por exemplo), aponte a raiz da API — sem `/v1`,
+que o SDK acrescenta — e use o identificador de modelo dele:
+
+```bash
+IA_PROVIDER=claude
+IA_API_KEY=sk-or-v1-...
+IA_BASE_URL=https://openrouter.ai/api
+IA_MODEL=anthropic/claude-haiku-4.5
 ```
 
 Sem `IA_API_KEY` o serviço cai no mock de propósito, em vez de falhar em toda

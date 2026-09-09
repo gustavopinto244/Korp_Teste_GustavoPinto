@@ -19,6 +19,7 @@ package ia
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -53,15 +54,27 @@ type interpretadorClaude struct {
 	modelo  anthropic.Model
 }
 
-// NovoInterpretadorClaude constrói o interpretador que fala com a API da
-// Anthropic. A apiKey vem de IA_API_KEY e o modelo de IA_MODEL (vazio =
-// ModeloPadrao); nenhuma das duas é logada em lugar nenhum.
-func NovoInterpretadorClaude(apiKey, modelo string) InterpretadorDeTexto {
+// NovoInterpretadorClaude constrói o interpretador que fala a Messages API.
+// A apiKey vem de IA_API_KEY, o modelo de IA_MODEL (vazio = ModeloPadrao) e
+// a baseURL de IA_BASE_URL (vazia = api.anthropic.com). Nenhum desses
+// valores é registrado em log.
+//
+// A baseURL existe porque a Messages API tem implementações compatíveis
+// além da própria Anthropic (gateways como o OpenRouter). O SDK oficial
+// continua sendo o cliente; só o endereço muda, e com ele o formato do
+// identificador de modelo — daí IA_MODEL ser configurável junto.
+func NovoInterpretadorClaude(apiKey, modelo, baseURL string) InterpretadorDeTexto {
 	if strings.TrimSpace(modelo) == "" {
 		modelo = ModeloPadrao
 	}
+
+	opcoes := []option.RequestOption{option.WithAPIKey(apiKey)}
+	if url := strings.TrimSpace(baseURL); url != "" {
+		opcoes = append(opcoes, option.WithBaseURL(url))
+	}
+
 	return &interpretadorClaude{
-		cliente: anthropic.NewClient(option.WithAPIKey(apiKey)),
+		cliente: anthropic.NewClient(opcoes...),
 		modelo:  anthropic.Model(modelo),
 	}
 }
@@ -129,7 +142,7 @@ func (i *interpretadorClaude) Interpretar(ctx context.Context, texto string, cat
 		OutputConfig: anthropic.OutputConfigParam{Effort: anthropic.OutputConfigEffortLow},
 	})
 	if err != nil {
-		return ResultadoInterpretacao{}, fmt.Errorf("chamar a API da Anthropic: %w", err)
+		return ResultadoInterpretacao{}, fmt.Errorf("chamar a Messages API: %w", resumirErroDeAPI(err))
 	}
 
 	bruto, err := extrairArgumentosDaFerramenta(resposta)
@@ -138,6 +151,20 @@ func (i *interpretadorClaude) Interpretar(ctx context.Context, texto string, cat
 	}
 
 	return conciliarComCatalogo(bruto, catalogo), nil
+}
+
+// limiteErroAPI corta a mensagem de erro que vai para o log. Um endpoint mal
+// configurado responde uma página HTML inteira, e o SDK a devolve dentro do
+// erro: sem corte, um único 404 despeja milhares de linhas no log do
+// serviço e esconde o que importa.
+const limiteErroAPI = 300
+
+func resumirErroDeAPI(err error) error {
+	runas := []rune(err.Error())
+	if len(runas) <= limiteErroAPI {
+		return err
+	}
+	return errors.New(string(runas[:limiteErroAPI]) + "… (mensagem truncada)")
 }
 
 // montarPrompt entrega o catálogo e o texto do usuário em blocos
